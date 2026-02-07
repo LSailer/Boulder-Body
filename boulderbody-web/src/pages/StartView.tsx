@@ -1,34 +1,48 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Session } from '../models/Session';
+import type { Session, VolumeSession, TrainingSession } from '../models/Session';
+import { isVolumeSession } from '../models/Session';
+import type { SessionType } from '../models/SessionType';
+import { TRAINING_PROTOCOL } from '../models/SessionType';
 import {
   getAllSessions,
   getCurrentSession,
-  getLastFinishedSession,
+  getLastVolumeSession,
+  getLastTrainingSession,
   saveSession,
+  deleteSession,
 } from '../logic/StorageManager';
 import { getRecommendation } from '../logic/SessionRecommender';
+import { getTrainingRecommendation } from '../logic/TrainingRecommender';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { SessionHistoryItem } from '../components/SessionHistoryItem';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { deleteSession } from '../logic/StorageManager';
 
 /**
  * Start View - Home screen with session form and history.
- * Displays recommended level based on past performance.
+ * Displays recommended settings based on past performance for both session types.
  */
 export function StartView() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionType, setSessionType] = useState<SessionType>('volume');
+
+  // Volume session state
   const [level, setLevel] = useState(5);
   const [boulderCount, setBoulderCount] = useState(20);
-  const [recommendationReason, setRecommendationReason] = useState('');
+  const [volumeReason, setVolumeReason] = useState('');
+
+  // Training session state
+  const [hangWeight, setHangWeight] = useState(0);
+  const [pullupWeight, setPullupWeight] = useState(0);
+  const [trainingReason, setTrainingReason] = useState('');
+
   const [deleteConfirm, setDeleteConfirm] = useState<{
     id: string;
     date: string;
   } | null>(null);
 
-  // Load sessions and calculate recommendation on mount
+  // Load sessions and calculate recommendations on mount
   useEffect(() => {
     const allSessions = getAllSessions();
     setSessions(allSessions.filter((s) => s.isFinished));
@@ -36,36 +50,81 @@ export function StartView() {
     // Check if there's an active session
     const activeSession = getCurrentSession();
     if (activeSession) {
-      // Resume active session
-      navigate(`/session/${activeSession.id}`);
+      // Resume active session - route based on type
+      if (isVolumeSession(activeSession)) {
+        navigate(`/session/${activeSession.id}`);
+      } else {
+        navigate(`/training/${activeSession.id}`);
+      }
       return;
     }
 
-    // Get recommendation
-    const lastSession = getLastFinishedSession();
-    const recommendation = getRecommendation(lastSession);
-    setLevel(recommendation.level);
-    setBoulderCount(recommendation.boulderCount);
-    setRecommendationReason(recommendation.reason);
+    // Get volume recommendation
+    const lastVolumeSession = getLastVolumeSession();
+    const volumeRec = getRecommendation(lastVolumeSession);
+    setLevel(volumeRec.level);
+    setBoulderCount(volumeRec.boulderCount);
+    setVolumeReason(volumeRec.reason);
+
+    // Get training recommendation
+    const lastTrainingSession = getLastTrainingSession();
+    const trainingRec = getTrainingRecommendation(lastTrainingSession);
+    setHangWeight(trainingRec.hangWeight);
+    setPullupWeight(trainingRec.pullupWeight);
+    setTrainingReason(trainingRec.reason);
   }, [navigate]);
 
   const handleStartSession = () => {
-    // Create new session with startTime
-    const newSession: Session = {
-      id: crypto.randomUUID(),
-      date: new Date(),
-      startTime: new Date(),
-      targetLevel: level,
-      boulderCount,
-      isFinished: false,
-      attempts: Array.from({ length: boulderCount }, (_, i) => ({
-        id: crypto.randomUUID(),
-        order: i + 1,
-      })),
-    };
+    let newSession: Session;
 
-    saveSession(newSession);
-    navigate(`/session/${newSession.id}`);
+    if (sessionType === 'volume') {
+      // Create volume session
+      const volumeSession: VolumeSession = {
+        id: crypto.randomUUID(),
+        sessionType: 'volume',
+        date: new Date(),
+        startTime: new Date(),
+        isFinished: false,
+        targetLevel: level,
+        boulderCount,
+        attempts: Array.from({ length: boulderCount }, (_, i) => ({
+          id: crypto.randomUUID(),
+          order: i + 1,
+        })),
+      };
+      newSession = volumeSession;
+      saveSession(newSession);
+      navigate(`/session/${newSession.id}`);
+    } else {
+      // Create training session
+      const trainingSession: TrainingSession = {
+        id: crypto.randomUUID(),
+        sessionType: 'training',
+        date: new Date(),
+        startTime: new Date(),
+        isFinished: false,
+        trainingData: {
+          hangWeight,
+          pullupWeight,
+          hangSets: Array.from({ length: TRAINING_PROTOCOL.hangSets }, (_, i) => ({
+            id: crypto.randomUUID(),
+            order: i + 1,
+            exercise: 'hang',
+            completed: false,
+          })),
+          pullupSets: Array.from({ length: TRAINING_PROTOCOL.pullupSets }, (_, i) => ({
+            id: crypto.randomUUID(),
+            order: i + 1,
+            exercise: 'pullup',
+            completed: false,
+          })),
+          allSetsCompleted: false,
+        },
+      };
+      newSession = trainingSession;
+      saveSession(newSession);
+      navigate(`/training/${newSession.id}`);
+    }
   };
 
   const handleDeleteSession = (id: string) => {
@@ -89,12 +148,18 @@ export function StartView() {
     setSessions(sessions.filter((s) => s.id !== deleteConfirm.id));
     setDeleteConfirm(null);
 
-    // Recalculate recommendation after deletion
-    const lastSession = getLastFinishedSession();
-    const recommendation = getRecommendation(lastSession);
-    setLevel(recommendation.level);
-    setBoulderCount(recommendation.boulderCount);
-    setRecommendationReason(recommendation.reason);
+    // Recalculate both recommendations after deletion
+    const lastVolumeSession = getLastVolumeSession();
+    const volumeRec = getRecommendation(lastVolumeSession);
+    setLevel(volumeRec.level);
+    setBoulderCount(volumeRec.boulderCount);
+    setVolumeReason(volumeRec.reason);
+
+    const lastTrainingSession = getLastTrainingSession();
+    const trainingRec = getTrainingRecommendation(lastTrainingSession);
+    setHangWeight(trainingRec.hangWeight);
+    setPullupWeight(trainingRec.pullupWeight);
+    setTrainingReason(trainingRec.reason);
   };
 
   return (
@@ -114,57 +179,136 @@ export function StartView() {
             Start New Session
           </h2>
 
+          {/* Session Type Selector */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+              Session Type
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSessionType('volume')}
+                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                  sessionType === 'volume'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                Volume
+              </button>
+              <button
+                onClick={() => setSessionType('training')}
+                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                  sessionType === 'training'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                Training
+              </button>
+            </div>
+          </div>
+
           {/* Recommendation reason */}
-          {recommendationReason && (
+          {sessionType === 'volume' && volumeReason && (
             <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-              <span className="font-medium">Recommendation:</span>{' '}
-              {recommendationReason}
+              <span className="font-medium">Recommendation:</span> {volumeReason}
+            </div>
+          )}
+          {sessionType === 'training' && trainingReason && (
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
+              <span className="font-medium">Recommendation:</span> {trainingReason}
             </div>
           )}
 
-          {/* Level input */}
-          <div className="mb-4">
-            <label
-              htmlFor="level"
-              className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
-            >
-              Target Level
-            </label>
-            <input
-              id="level"
-              type="number"
-              min="1"
-              value={level}
-              onChange={(e) => setLevel(parseInt(e.target.value) || 1)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          {/* Volume Session Inputs */}
+          {sessionType === 'volume' && (
+            <>
+              {/* Level input */}
+              <div className="mb-4">
+                <label
+                  htmlFor="level"
+                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
+                >
+                  Target Level
+                </label>
+                <input
+                  id="level"
+                  type="number"
+                  min="1"
+                  value={level}
+                  onChange={(e) => setLevel(parseInt(e.target.value) || 1)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
 
-          {/* Boulder count input */}
-          <div className="mb-6">
-            <label
-              htmlFor="boulderCount"
-              className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
-            >
-              Number of Boulders
-            </label>
-            <input
-              id="boulderCount"
-              type="number"
-              min="1"
-              max="100"
-              value={boulderCount}
-              onChange={(e) => setBoulderCount(parseInt(e.target.value) || 1)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+              {/* Boulder count input */}
+              <div className="mb-6">
+                <label
+                  htmlFor="boulderCount"
+                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
+                >
+                  Number of Boulders
+                </label>
+                <input
+                  id="boulderCount"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={boulderCount}
+                  onChange={(e) => setBoulderCount(parseInt(e.target.value) || 1)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Training Session Inputs */}
+          {sessionType === 'training' && (
+            <>
+              <div className="mb-4">
+                <label
+                  htmlFor="hangWeight"
+                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
+                >
+                  Max Hang Weight (kg) - {TRAINING_PROTOCOL.hangSets} sets of {TRAINING_PROTOCOL.hangDuration}s × {TRAINING_PROTOCOL.hangReps}
+                </label>
+                <input
+                  id="hangWeight"
+                  type="number"
+                  min="0"
+                  step="2.5"
+                  value={hangWeight}
+                  onChange={(e) => setHangWeight(parseFloat(e.target.value) || 0)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="mb-6">
+                <label
+                  htmlFor="pullupWeight"
+                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
+                >
+                  Max Pull-up Weight (kg) - {TRAINING_PROTOCOL.pullupSets} sets of {TRAINING_PROTOCOL.pullupReps} reps
+                </label>
+                <input
+                  id="pullupWeight"
+                  type="number"
+                  min="0"
+                  step="2.5"
+                  value={pullupWeight}
+                  onChange={(e) => setPullupWeight(parseFloat(e.target.value) || 0)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </>
+          )}
 
           {/* Start button */}
           <button
             onClick={handleStartSession}
             className="w-full btn btn-primary text-lg py-3"
           >
-            Start Session
+            Start {sessionType === 'volume' ? 'Volume' : 'Training'} Session
           </button>
         </div>
 

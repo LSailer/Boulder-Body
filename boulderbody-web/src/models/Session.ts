@@ -1,9 +1,14 @@
 import type { BoulderAttempt } from './BoulderAttempt';
+import type { SessionType, TrainingData, TrainingSet } from './SessionType';
+
+// Re-export TrainingSet for convenience
+export type { TrainingSet };
 
 /**
- * Represents a complete bouldering session.
+ * Base properties shared by all session types.
+ * Using discriminated union pattern for type safety.
  */
-export interface Session {
+interface BaseSession {
   /** Unique identifier */
   id: string;
 
@@ -16,17 +21,61 @@ export interface Session {
   /** When the session finished (undefined if still active) */
   endTime?: Date;
 
+  /** Whether this session has been completed */
+  isFinished: boolean;
+
+  /** Discriminator field for TypeScript type narrowing */
+  sessionType: SessionType;
+}
+
+/**
+ * Volume session - tracks boulder attempts at a target difficulty level.
+ * This is the original BoulderBody session type.
+ */
+export interface VolumeSession extends BaseSession {
+  sessionType: 'volume';
+
   /** Target difficulty level for this session */
   targetLevel: number;
 
   /** Total number of boulders to attempt */
   boulderCount: number;
 
-  /** Whether this session has been completed */
-  isFinished: boolean;
-
   /** Array of boulder attempts */
   attempts: BoulderAttempt[];
+}
+
+/**
+ * Training session - tracks max hangs and max pull-ups with structured sets.
+ * Uses separate weight tracking for independent progression.
+ */
+export interface TrainingSession extends BaseSession {
+  sessionType: 'training';
+
+  /** Training-specific data (weights, sets, completion status) */
+  trainingData: TrainingData;
+}
+
+/**
+ * Union type representing any valid session.
+ * Use type guards (isVolumeSession, isTrainingSession) to safely narrow types.
+ */
+export type Session = VolumeSession | TrainingSession;
+
+/**
+ * Type guard to check if a session is a volume session.
+ * Use this before accessing volume-specific properties like targetLevel.
+ */
+export function isVolumeSession(session: Session): session is VolumeSession {
+  return session.sessionType === 'volume';
+}
+
+/**
+ * Type guard to check if a session is a training session.
+ * Use this before accessing training-specific properties like trainingData.
+ */
+export function isTrainingSession(session: Session): session is TrainingSession {
+  return session.sessionType === 'training';
 }
 
 /**
@@ -50,12 +99,12 @@ export function getSessionDuration(session: Session): string {
 }
 
 /**
- * Calculate fail rate for a session.
+ * Calculate fail rate for a volume session.
  * Unlogged attempts count as fails (stricter approach).
- * @param session The session to calculate fail rate for
+ * @param session The volume session to calculate fail rate for
  * @returns Fail rate as a percentage (0-100)
  */
-export function getFailRate(session: Session): number {
+export function getFailRate(session: VolumeSession): number {
   if (session.boulderCount === 0) {
     return 0;
   }
@@ -68,11 +117,11 @@ export function getFailRate(session: Session): number {
 }
 
 /**
- * Get count of attempts by result type.
- * @param session The session to count attempts for
+ * Get count of attempts by result type for a volume session.
+ * @param session The volume session to count attempts for
  * @returns Object with counts for flash, done, fail, and unlogged attempts
  */
-export function getAttemptCounts(session: Session) {
+export function getAttemptCounts(session: VolumeSession) {
   return {
     flash: session.attempts.filter((a) => a.result === 'flash').length,
     done: session.attempts.filter((a) => a.result === 'done').length,
