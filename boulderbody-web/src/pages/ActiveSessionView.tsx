@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { Session } from '../models/Session';
+import type { VolumeSession } from '../models/Session';
+import { isVolumeSession } from '../models/Session';
 import type { BoulderAttempt, AttemptResult } from '../models/BoulderAttempt';
-import { getAllSessions, updateSession } from '../logic/StorageManager';
+import { getAllSessions, updateSession, deleteSession } from '../logic/StorageManager';
 import { BoulderLogModal } from '../components/BoulderLogModal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { getAttemptCounts } from '../models/Session';
@@ -10,15 +11,17 @@ import { getAttemptCounts } from '../models/Session';
 /**
  * Active Session View - Live session logging interface.
  * Shows grid of boulders and allows logging attempts.
+ * Only handles volume sessions - training sessions use TrainingSessionView.
  */
 export function ActiveSessionView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<VolumeSession | null>(null);
   const [selectedAttempt, setSelectedAttempt] = useState<BoulderAttempt | null>(
     null
   );
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  const [showBreakConfirm, setShowBreakConfirm] = useState(false);
 
   useEffect(() => {
     if (!sessionId) {
@@ -30,6 +33,12 @@ export function ActiveSessionView() {
     const found = allSessions.find((s) => s.id === sessionId);
 
     if (!found) {
+      navigate('/');
+      return;
+    }
+
+    // This view only handles volume sessions
+    if (!isVolumeSession(found)) {
       navigate('/');
       return;
     }
@@ -89,6 +98,11 @@ export function ActiveSessionView() {
     navigate(`/summary/${session.id}`);
   };
 
+  const handleBreakSession = () => {
+    deleteSession(session.id);
+    navigate('/');
+  };
+
   const counts = getAttemptCounts(session);
 
   return (
@@ -97,14 +111,20 @@ export function ActiveSessionView() {
         {/* Header */}
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Level {session.targetLevel} Session
-            </h1>
             <button
               onClick={() => navigate('/')}
               className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
             >
               ← Back
+            </button>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Level {session.targetLevel} Session
+            </h1>
+            <button
+              onClick={() => setShowBreakConfirm(true)}
+              className="text-red-500 hover:text-red-400 font-medium"
+            >
+              Break Session
             </button>
           </div>
 
@@ -193,6 +213,18 @@ export function ActiveSessionView() {
         cancelText="Keep Logging"
         onConfirm={finishSession}
         onCancel={() => setShowFinishConfirm(false)}
+      />
+
+      {/* Break session confirmation */}
+      <ConfirmDialog
+        isOpen={showBreakConfirm}
+        title="Break Session?"
+        message="Are you sure you want to end this session? It will be deleted and won't appear in your history."
+        confirmText="End Session"
+        cancelText="Continue"
+        variant="danger"
+        onConfirm={handleBreakSession}
+        onCancel={() => setShowBreakConfirm(false)}
       />
     </div>
   );
