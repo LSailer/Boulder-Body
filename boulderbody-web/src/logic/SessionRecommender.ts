@@ -1,8 +1,8 @@
-import type { Session } from '../models/Session';
+import type { VolumeSession } from '../models/Session';
 import { getFailRate } from '../models/Session';
 
 /**
- * Recommendation for the next bouldering session.
+ * Recommendation for the next volume bouldering session.
  */
 export interface SessionRecommendation {
   /** Recommended difficulty level */
@@ -25,7 +25,7 @@ const DEFAULT_RECOMMENDATION: SessionRecommendation = {
 };
 
 /**
- * Calculate recommended level and boulder count for next session.
+ * Calculate recommended level and boulder count for next volume session.
  *
  * Algorithm:
  * 1. Start with the target level from last session
@@ -37,11 +37,11 @@ const DEFAULT_RECOMMENDATION: SessionRecommendation = {
  *    - >14 days since last session → decrease level by 2
  * 4. Clamp level to minimum of 1
  *
- * @param lastSession The most recent finished session (or null if none)
- * @returns Recommendation for next session
+ * @param lastSession The most recent finished volume session (or null if none)
+ * @returns Recommendation for next volume session
  */
 export function getRecommendation(
-  lastSession: Session | null
+  lastSession: VolumeSession | null
 ): SessionRecommendation {
   // If no previous session, return default
   if (!lastSession) {
