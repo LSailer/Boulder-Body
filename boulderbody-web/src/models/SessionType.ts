@@ -35,8 +35,8 @@ export interface TrainingData {
 /**
  * Training protocol constants.
  * Based on standard max strength training principles:
- * - Max hangs: 7 seconds × 3 reps with 4 min rest
- * - Max pull-ups: 3 reps with 4 min rest
+ * - Max hangs: 7 seconds × 3 reps with 3 min rest
+ * - Max pull-ups: 3 reps with 3 min rest
  */
 export const TRAINING_PROTOCOL = {
   hangSets: 5,
@@ -44,5 +44,5 @@ export const TRAINING_PROTOCOL = {
   hangReps: 3, // hangs per set
   pullupSets: 5,
   pullupReps: 3, // pull-ups per set
-  restBetweenSets: 240, // 4 minutes in seconds (mandatory)
+  restBetweenSets: 180, // 3 minutes in seconds
 } as const;
