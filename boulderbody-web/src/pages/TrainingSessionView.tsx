@@ -3,7 +3,13 @@
  *
  * Training session tracker for max hangs and max pull-ups.
  * Shows sets for both exercises with completion tracking.
- * Enforces mandatory 4-minute rest timer between sets.
+ *
+ * Hang set flow:
+ *   First set:  click → 5s prep → 7s hang (skippable) → 3 min rest (pauseable, skippable)
+ *   Subsequent: rest ends/skipped → 7s hang auto-starts → 3 min rest (pauseable, skippable)
+ *
+ * Pull-up set flow:
+ *   click → marks complete → 3 min rest (skippable)
  */
 
 import { useState, useEffect } from 'react';
@@ -19,7 +25,21 @@ export function TrainingSessionView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const [session, setSession] = useState<TrainingSession | null>(null);
-  const [showRestTimer, setShowRestTimer] = useState(false);
+
+  // Timer visibility
+  const [showPrepTimer, setShowPrepTimer] = useState(false); // 5s get-ready (first hang only)
+  const [showHangTimer, setShowHangTimer] = useState(false); // 7s hang countdown
+  const [showRestTimer, setShowRestTimer] = useState(false); // 3 min rest
+
+  // Rest timer pause state
+  const [restTimerPaused, setRestTimerPaused] = useState(false);
+  const [pendingHangSetId, setPendingHangSetId] = useState<string | null>(null);
+  const [isFirstHangSet, setIsFirstHangSet] = useState(true); // prep shown only on first
+
+  // Track which exercise triggered the rest timer (for auto-starting next hang)
+  const [lastExercise, setLastExercise] = useState<'hang' | 'pullup' | null>(null);
+
+  // Dialog visibility
   const [showBreakConfirm, setShowBreakConfirm] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
 
@@ -37,13 +57,11 @@ export function TrainingSessionView() {
       return;
     }
 
-    // This view only handles training sessions
     if (!isTrainingSession(found)) {
       navigate('/');
       return;
     }
 
-    // If already finished, go to summary
     if (found.isFinished) {
       navigate(`/summary/${sessionId}`);
       return;
@@ -56,18 +74,28 @@ export function TrainingSessionView() {
     return null; // Loading state
   }
 
-  const handleSetToggle = (set: TrainingSet) => {
-    const { trainingData } = session;
+  // ─── Set toggle ────────────────────────────────────────────────────────────
 
-    // Update the specific set
+  const handleSetToggle = (set: TrainingSet) => {
+    if (set.exercise === 'hang' && !set.completed) {
+      // Starting a hang — initiate timer flow, don't mark complete yet
+      setPendingHangSetId(set.id);
+      if (isFirstHangSet) {
+        setShowPrepTimer(true);
+      } else {
+        setShowHangTimer(true);
+      }
+      return;
+    }
+
+    // Hang un-completion OR pull-up toggle
+    const { trainingData } = session;
     let updatedHangSets = trainingData.hangSets;
     let updatedPullupSets = trainingData.pullupSets;
 
     if (set.exercise === 'hang') {
       updatedHangSets = trainingData.hangSets.map((s) =>
-        s.id === set.id
-          ? { ...s, completed: !s.completed, timestamp: !s.completed ? new Date() : undefined }
-          : s
+        s.id === set.id ? { ...s, completed: false, timestamp: undefined } : s
       );
     } else {
       updatedPullupSets = trainingData.pullupSets.map((s) =>
@@ -79,21 +107,66 @@ export function TrainingSessionView() {
 
     const updatedSession: TrainingSession = {
       ...session,
-      trainingData: {
-        ...trainingData,
-        hangSets: updatedHangSets,
-        pullupSets: updatedPullupSets,
-      },
+      trainingData: { ...trainingData, hangSets: updatedHangSets, pullupSets: updatedPullupSets },
     };
 
     updateSession(updatedSession);
     setSession(updatedSession);
 
-    // If completing a set (not uncompleting), show rest timer
-    if (!set.completed) {
+    if (set.exercise === 'pullup' && !set.completed) {
+      setLastExercise('pullup');
       setShowRestTimer(true);
     }
   };
+
+  // ─── Hang timer handlers ────────────────────────────────────────────────────
+
+  const handlePrepComplete = () => {
+    setShowPrepTimer(false);
+    setShowHangTimer(true);
+  };
+
+  const handleHangComplete = () => {
+    if (!pendingHangSetId) return;
+
+    const updatedHangSets = session.trainingData.hangSets.map((s) =>
+      s.id === pendingHangSetId ? { ...s, completed: true, timestamp: new Date() } : s
+    );
+    const updatedSession: TrainingSession = {
+      ...session,
+      trainingData: { ...session.trainingData, hangSets: updatedHangSets },
+    };
+
+    updateSession(updatedSession);
+    setSession(updatedSession);
+
+    setIsFirstHangSet(false);
+    setLastExercise('hang');
+    setShowHangTimer(false);
+    setShowRestTimer(true);
+  };
+
+  const handleHangSkip = () => {
+    handleHangComplete(); // skip still marks complete
+  };
+
+  // ─── Rest timer handlers ────────────────────────────────────────────────────
+
+  const handleRestComplete = () => {
+    setShowRestTimer(false);
+    setRestTimerPaused(false);
+
+    if (lastExercise === 'hang') {
+      // Auto-start next uncompleted hang set (no prep)
+      const nextHangSet = session.trainingData.hangSets.find((s) => !s.completed);
+      if (nextHangSet) {
+        setPendingHangSetId(nextHangSet.id);
+        setShowHangTimer(true);
+      }
+    }
+  };
+
+  // ─── Session completion ─────────────────────────────────────────────────────
 
   const handleFinishSession = () => {
     const { trainingData } = session;
@@ -101,7 +174,6 @@ export function TrainingSessionView() {
       trainingData.hangSets.every((s) => s.completed) &&
       trainingData.pullupSets.every((s) => s.completed);
 
-    // If not all complete, show confirmation
     if (!allComplete) {
       setShowFinishConfirm(true);
     } else {
@@ -111,7 +183,6 @@ export function TrainingSessionView() {
 
   const completeSession = () => {
     const { trainingData } = session;
-
     const allComplete =
       trainingData.hangSets.every((s) => s.completed) &&
       trainingData.pullupSets.every((s) => s.completed);
@@ -120,10 +191,7 @@ export function TrainingSessionView() {
       ...session,
       isFinished: true,
       endTime: new Date(),
-      trainingData: {
-        ...trainingData,
-        allSetsCompleted: allComplete,
-      },
+      trainingData: { ...trainingData, allSetsCompleted: allComplete },
     };
 
     updateSession(finishedSession);
@@ -135,13 +203,13 @@ export function TrainingSessionView() {
     navigate('/');
   };
 
-  const handleRestComplete = () => {
-    setShowRestTimer(false);
-  };
+  // ─── Derived values ─────────────────────────────────────────────────────────
 
   const totalCompleted =
     session.trainingData.hangSets.filter((s) => s.completed).length +
     session.trainingData.pullupSets.filter((s) => s.completed).length;
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
@@ -237,19 +305,41 @@ export function TrainingSessionView() {
         </div>
 
         {/* Finish button */}
-        <button
-          onClick={handleFinishSession}
-          className="w-full btn btn-success text-lg py-3"
-        >
+        <button onClick={handleFinishSession} className="w-full btn btn-success text-lg py-3">
           Finish Session
         </button>
       </div>
 
-      {/* Rest Timer */}
+      {/* 5s prep timer — first hang set only */}
+      <RestTimer
+        isOpen={showPrepTimer}
+        duration={5}
+        onComplete={handlePrepComplete}
+        title="Get Ready"
+      />
+
+      {/* 7s hang timer — skippable only */}
+      <RestTimer
+        isOpen={showHangTimer}
+        duration={TRAINING_PROTOCOL.hangDuration}
+        onComplete={handleHangComplete}
+        onSkip={handleHangSkip}
+        title="Hang!"
+      />
+
+      {/* 3 min rest timer — pauseable and skippable */}
       <RestTimer
         isOpen={showRestTimer}
         duration={TRAINING_PROTOCOL.restBetweenSets}
         onComplete={handleRestComplete}
+        onSkip={() => {
+          setShowRestTimer(false);
+          setRestTimerPaused(false);
+          handleRestComplete();
+        }}
+        onPause={() => setRestTimerPaused((p) => !p)}
+        isPaused={restTimerPaused}
+        title="Rest"
       />
 
       {/* Break session confirmation */}
