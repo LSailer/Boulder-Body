@@ -14,7 +14,7 @@ interface StorageSchema {
   sessions: Session[];
 }
 
-const CURRENT_VERSION = 2; // Incremented for sessionType discriminator
+const CURRENT_VERSION = 3; // Incremented for bench + trapbar exercises
 
 /**
  * Migrate v1 schema (pre-sessionType) to v2.
@@ -26,8 +26,32 @@ function migrateV1toV2(data: any): StorageSchema {
     version: 2,
     sessions: data.sessions.map((s: any) => ({
       ...s,
-      sessionType: s.sessionType || 'volume', // Default old sessions to volume
+      sessionType: s.sessionType || 'volume',
     })),
+  };
+}
+
+/**
+ * Migrate v2 schema to v3.
+ * Adds bench and trapbar fields to training sessions.
+ */
+function migrateV2toV3(data: any): StorageSchema {
+  console.log('Migrating storage from v2 to v3...');
+  return {
+    version: 3,
+    sessions: data.sessions.map((s: any) => {
+      if (s.sessionType !== 'training') return s;
+      return {
+        ...s,
+        trainingData: {
+          ...s.trainingData,
+          benchWeight: s.trainingData.benchWeight ?? 10,
+          trapBarWeight: s.trainingData.trapBarWeight ?? 20,
+          benchSets: s.trainingData.benchSets ?? [],
+          trapBarSets: s.trainingData.trapBarSets ?? [],
+        },
+      };
+    }),
   };
 }
 
@@ -51,6 +75,14 @@ function deserializeSession(data: any): Session {
           timestamp: s.timestamp ? new Date(s.timestamp) : undefined,
         })),
         pullupSets: data.trainingData.pullupSets.map((s: any) => ({
+          ...s,
+          timestamp: s.timestamp ? new Date(s.timestamp) : undefined,
+        })),
+        benchSets: (data.trainingData.benchSets ?? []).map((s: any) => ({
+          ...s,
+          timestamp: s.timestamp ? new Date(s.timestamp) : undefined,
+        })),
+        trapBarSets: (data.trainingData.trapBarSets ?? []).map((s: any) => ({
           ...s,
           timestamp: s.timestamp ? new Date(s.timestamp) : undefined,
         })),
@@ -91,13 +123,16 @@ export function getAllSessions(): Session[] {
       // Apply migrations sequentially
       if (!data.version || data.version < 2) {
         data = migrateV1toV2(data);
-        // Save migrated data immediately
-        try {
-          localStorage.setItem(SESSIONS_KEY, JSON.stringify(data));
-          console.log('Migration to v2 complete');
-        } catch (saveError) {
-          console.error('Failed to save migrated data:', saveError);
-        }
+      }
+      if (data.version < 3) {
+        data = migrateV2toV3(data);
+      }
+      // Save migrated data immediately
+      try {
+        localStorage.setItem(SESSIONS_KEY, JSON.stringify(data));
+        console.log(`Migration to v${CURRENT_VERSION} complete`);
+      } catch (saveError) {
+        console.error('Failed to save migrated data:', saveError);
       }
     }
 

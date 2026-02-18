@@ -85,14 +85,24 @@ export function SessionHistoryItem({
 
       {/* Training Session Stats */}
       {isTrainingSession(session) && (
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="text-gray-600 dark:text-gray-300">
+        <div className="text-sm">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600 dark:text-gray-300 mb-1">
             <div>
-              Hangs: {session.trainingData.hangWeight}kg ({session.trainingData.hangSets.filter(s => s.completed).length}/5)
+              Hangs: {session.trainingData.hangWeight}kg ({session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length})
             </div>
             <div>
-              Pull-ups: {session.trainingData.pullupWeight}kg ({session.trainingData.pullupSets.filter(s => s.completed).length}/5)
+              Pull-ups: {session.trainingData.pullupWeight}kg ({session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length})
             </div>
+            {(session.trainingData.benchSets ?? []).length > 0 && (
+              <div>
+                Bench: {session.trainingData.benchWeight ?? 10}kg ({(session.trainingData.benchSets ?? []).filter(s => s.completed).length}/{(session.trainingData.benchSets ?? []).length})
+              </div>
+            )}
+            {(session.trainingData.trapBarSets ?? []).length > 0 && (
+              <div>
+                Trap Bar: {session.trainingData.trapBarWeight ?? 20}kg ({(session.trainingData.trapBarSets ?? []).filter(s => s.completed).length}/{(session.trainingData.trapBarSets ?? []).length})
+              </div>
+            )}
           </div>
           <div className="text-right text-gray-500 dark:text-gray-400">
             {duration}

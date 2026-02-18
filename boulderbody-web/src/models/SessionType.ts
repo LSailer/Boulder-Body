@@ -14,7 +14,7 @@ export type SessionType = 'volume' | 'training';
 export interface TrainingSet {
   id: string;
   order: number; // 1-5 (per exercise)
-  exercise: 'hang' | 'pullup';
+  exercise: 'hang' | 'pullup' | 'bench' | 'trapbar';
   completed: boolean;
   timestamp?: Date;
   notes?: string;
@@ -22,14 +22,17 @@ export interface TrainingSet {
 
 /**
  * Training session data structure.
- * Tracks separate weights for hangs and pull-ups, allowing independent progression.
+ * Tracks separate weights for all exercises, allowing independent progression.
  */
 export interface TrainingData {
   hangWeight: number; // kg added (0 = bodyweight)
   pullupWeight: number; // kg added (0 = bodyweight)
+  benchWeight?: number; // default 10kg
+  trapBarWeight?: number; // default 20kg
   hangSets: TrainingSet[]; // Always 5 sets
   pullupSets: TrainingSet[]; // Always 5 sets
-  allSetsCompleted: boolean; // true only if all 10 sets done
+  benchSets?: TrainingSet[]; // absent in old sessions
+  trapBarSets?: TrainingSet[];
 }
 
 /**
@@ -37,6 +40,8 @@ export interface TrainingData {
  * Based on standard max strength training principles:
  * - Max hangs: 7 seconds × 3 reps with 3 min rest
  * - Max pull-ups: 3 reps with 3 min rest
+ * - Bench press: 3 reps with 3 min rest
+ * - Trap bar deadlift: 3 reps with 3 min rest
  */
 export const TRAINING_PROTOCOL = {
   hangSets: 5,
@@ -44,5 +49,17 @@ export const TRAINING_PROTOCOL = {
   hangReps: 3, // hangs per set
   pullupSets: 5,
   pullupReps: 3, // pull-ups per set
+  benchSets: 5,
+  benchReps: 3,
+  trapBarSets: 5,
+  trapBarReps: 3,
   restBetweenSets: 180, // 3 minutes in seconds
 } as const;
+
+/**
+ * Returns true if all sets in the array are completed.
+ * Returns false if array is undefined, empty, or has incomplete sets.
+ */
+export function isExerciseComplete(sets: TrainingSet[] | undefined): boolean {
+  return !!sets && sets.length > 0 && sets.every((s) => s.completed);
+}

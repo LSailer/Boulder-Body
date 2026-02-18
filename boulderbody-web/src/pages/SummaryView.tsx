@@ -11,6 +11,7 @@ import {
 } from '../models/Session';
 import { getAllSessions, deleteSession, getLastTrainingSession } from '../logic/StorageManager';
 import { getTrainingRecommendation } from '../logic/TrainingRecommender';
+import { isExerciseComplete } from '../models/SessionType';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
 /**
@@ -231,7 +232,7 @@ export function SummaryView() {
                   </span>
                 </div>
                 <div className="text-sm text-blue-600 dark:text-blue-300">
-                  {session.trainingData.hangSets.filter(s => s.completed).length}/5 sets completed
+                  {session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length} sets completed
                 </div>
               </div>
 
@@ -245,13 +246,48 @@ export function SummaryView() {
                   </span>
                 </div>
                 <div className="text-sm text-purple-600 dark:text-purple-300">
-                  {session.trainingData.pullupSets.filter(s => s.completed).length}/5 sets completed
+                  {session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length} sets completed
                 </div>
               </div>
+
+              {(session.trainingData.benchSets ?? []).length > 0 && (
+                <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-green-800 dark:text-green-200 font-medium">
+                      Bench Press
+                    </span>
+                    <span className="text-green-900 dark:text-green-100 font-bold">
+                      {session.trainingData.benchWeight ?? 10}kg
+                    </span>
+                  </div>
+                  <div className="text-sm text-green-600 dark:text-green-300">
+                    {(session.trainingData.benchSets ?? []).filter(s => s.completed).length}/{(session.trainingData.benchSets ?? []).length} sets completed
+                  </div>
+                </div>
+              )}
+
+              {(session.trainingData.trapBarSets ?? []).length > 0 && (
+                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-orange-800 dark:text-orange-200 font-medium">
+                      Trap Bar Deadlift
+                    </span>
+                    <span className="text-orange-900 dark:text-orange-100 font-bold">
+                      {session.trainingData.trapBarWeight ?? 20}kg
+                    </span>
+                  </div>
+                  <div className="text-sm text-orange-600 dark:text-orange-300">
+                    {(session.trainingData.trapBarSets ?? []).filter(s => s.completed).length}/{(session.trainingData.trapBarSets ?? []).length} sets completed
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* All sets completion message */}
-            {session.trainingData.allSetsCompleted && (
+            {isExerciseComplete(session.trainingData.hangSets) &&
+              isExerciseComplete(session.trainingData.pullupSets) &&
+              isExerciseComplete(session.trainingData.benchSets) &&
+              isExerciseComplete(session.trainingData.trapBarSets) && (
               <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg mb-6 text-center">
                 <span className="text-green-800 dark:text-green-200 font-medium">
                   All sets completed! 🎉
@@ -279,6 +315,18 @@ export function SummaryView() {
                     <span className="text-gray-500 dark:text-gray-400">Pull-ups:</span>{' '}
                     <span className="font-medium text-gray-900 dark:text-white">
                       {trainingRec.pullupWeight}kg
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Bench:</span>{' '}
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {trainingRec.benchWeight}kg
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Trap Bar:</span>{' '}
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {trainingRec.trapBarWeight}kg
                     </span>
                   </div>
                 </div>

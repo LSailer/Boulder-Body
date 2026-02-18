@@ -37,7 +37,7 @@ export function TrainingSessionView() {
   const [isFirstHangSet, setIsFirstHangSet] = useState(true); // prep shown only on first
 
   // Track which exercise triggered the rest timer (for auto-starting next hang)
-  const [lastExercise, setLastExercise] = useState<'hang' | 'pullup' | null>(null);
+  const [lastExercise, setLastExercise] = useState<'hang' | 'pullup' | 'bench' | 'trapbar' | null>(null);
 
   // Dialog visibility
   const [showBreakConfirm, setShowBreakConfirm] = useState(false);
@@ -88,34 +88,67 @@ export function TrainingSessionView() {
       return;
     }
 
-    // Hang un-completion OR pull-up toggle
     const { trainingData } = session;
-    let updatedHangSets = trainingData.hangSets;
-    let updatedPullupSets = trainingData.pullupSets;
 
     if (set.exercise === 'hang') {
-      updatedHangSets = trainingData.hangSets.map((s) =>
+      // Un-complete hang
+      const updatedHangSets = trainingData.hangSets.map((s) =>
         s.id === set.id ? { ...s, completed: false, timestamp: undefined } : s
       );
-    } else {
-      updatedPullupSets = trainingData.pullupSets.map((s) =>
+      const updatedSession: TrainingSession = {
+        ...session,
+        trainingData: { ...trainingData, hangSets: updatedHangSets },
+      };
+      updateSession(updatedSession);
+      setSession(updatedSession);
+    } else if (set.exercise === 'pullup') {
+      const updatedPullupSets = trainingData.pullupSets.map((s) =>
         s.id === set.id
           ? { ...s, completed: !s.completed, timestamp: !s.completed ? new Date() : undefined }
           : s
       );
-    }
-
-    const updatedSession: TrainingSession = {
-      ...session,
-      trainingData: { ...trainingData, hangSets: updatedHangSets, pullupSets: updatedPullupSets },
-    };
-
-    updateSession(updatedSession);
-    setSession(updatedSession);
-
-    if (set.exercise === 'pullup' && !set.completed) {
-      setLastExercise('pullup');
-      setShowRestTimer(true);
+      const updatedSession: TrainingSession = {
+        ...session,
+        trainingData: { ...trainingData, pullupSets: updatedPullupSets },
+      };
+      updateSession(updatedSession);
+      setSession(updatedSession);
+      if (!set.completed) {
+        setLastExercise('pullup');
+        setShowRestTimer(true);
+      }
+    } else if (set.exercise === 'bench') {
+      const updatedBenchSets = (trainingData.benchSets ?? []).map((s) =>
+        s.id === set.id
+          ? { ...s, completed: !s.completed, timestamp: !s.completed ? new Date() : undefined }
+          : s
+      );
+      const updatedSession: TrainingSession = {
+        ...session,
+        trainingData: { ...trainingData, benchSets: updatedBenchSets },
+      };
+      updateSession(updatedSession);
+      setSession(updatedSession);
+      if (!set.completed) {
+        setLastExercise('bench');
+        setShowRestTimer(true);
+      }
+    } else if (set.exercise === 'trapbar') {
+      const updatedTrapBarSets = (trainingData.trapBarSets ?? []).map((s) =>
+        s.id === set.id
+          ? { ...s, completed: !s.completed, timestamp: !s.completed ? new Date() : undefined }
+          : s
+      );
+      const updatedSession: TrainingSession = {
+        ...session,
+        trainingData: { ...trainingData, trapBarSets: updatedTrapBarSets },
+      };
+      updateSession(updatedSession);
+      setSession(updatedSession);
+      if (!set.completed) {
+        setLastExercise('trapbar');
+        setShowRestTimer(true);
+      }
     }
   };
 
@@ -169,12 +202,7 @@ export function TrainingSessionView() {
   // ─── Session completion ─────────────────────────────────────────────────────
 
   const handleFinishSession = () => {
-    const { trainingData } = session;
-    const allComplete =
-      trainingData.hangSets.every((s) => s.completed) &&
-      trainingData.pullupSets.every((s) => s.completed);
-
-    if (!allComplete) {
+    if (totalCompleted < totalSets) {
       setShowFinishConfirm(true);
     } else {
       completeSession();
@@ -182,16 +210,10 @@ export function TrainingSessionView() {
   };
 
   const completeSession = () => {
-    const { trainingData } = session;
-    const allComplete =
-      trainingData.hangSets.every((s) => s.completed) &&
-      trainingData.pullupSets.every((s) => s.completed);
-
     const finishedSession: TrainingSession = {
       ...session,
       isFinished: true,
       endTime: new Date(),
-      trainingData: { ...trainingData, allSetsCompleted: allComplete },
     };
 
     updateSession(finishedSession);
@@ -207,7 +229,15 @@ export function TrainingSessionView() {
 
   const totalCompleted =
     session.trainingData.hangSets.filter((s) => s.completed).length +
-    session.trainingData.pullupSets.filter((s) => s.completed).length;
+    session.trainingData.pullupSets.filter((s) => s.completed).length +
+    (session.trainingData.benchSets ?? []).filter((s) => s.completed).length +
+    (session.trainingData.trapBarSets ?? []).filter((s) => s.completed).length;
+
+  const totalSets =
+    session.trainingData.hangSets.length +
+    session.trainingData.pullupSets.length +
+    (session.trainingData.benchSets ?? []).length +
+    (session.trainingData.trapBarSets ?? []).length;
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
@@ -235,10 +265,11 @@ export function TrainingSessionView() {
           </div>
 
           {/* Weight info */}
-          <div className="flex justify-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-600 dark:text-gray-400 text-center">
             <span>Hangs: {session.trainingData.hangWeight}kg</span>
-            <span>|</span>
             <span>Pull-ups: {session.trainingData.pullupWeight}kg</span>
+            <span>Bench: {session.trainingData.benchWeight ?? 10}kg</span>
+            <span>Trap Bar: {session.trainingData.trapBarWeight ?? 20}kg</span>
           </div>
         </div>
 
@@ -249,13 +280,13 @@ export function TrainingSessionView() {
               Overall Progress
             </span>
             <span className="text-gray-900 dark:text-white font-bold">
-              {totalCompleted}/10 sets
+              {totalCompleted}/{totalSets} sets
             </span>
           </div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
             <div
               className="bg-blue-600 h-3 rounded-full transition-all duration-300"
-              style={{ width: `${(totalCompleted / 10) * 100}%` }}
+              style={{ width: `${totalSets > 0 ? (totalCompleted / totalSets) * 100 : 0}%` }}
             />
           </div>
         </div>
@@ -283,7 +314,7 @@ export function TrainingSessionView() {
         </div>
 
         {/* Max Pull-ups Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-4">
           <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-white">
             Max Pull-ups ({TRAINING_PROTOCOL.pullupReps} reps)
           </h2>
@@ -303,6 +334,54 @@ export function TrainingSessionView() {
             ))}
           </div>
         </div>
+
+        {/* Bench Press Section */}
+        {(session.trainingData.benchSets ?? []).length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-4">
+            <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-white">
+              Bench Press ({TRAINING_PROTOCOL.benchReps} reps)
+            </h2>
+            <div className="grid grid-cols-5 gap-3">
+              {(session.trainingData.benchSets ?? []).map((set) => (
+                <button
+                  key={set.id}
+                  onClick={() => handleSetToggle(set)}
+                  className={`aspect-square rounded-lg font-bold text-lg transition-all ${
+                    set.completed
+                      ? 'bg-green-600 text-white shadow-lg scale-105'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {set.order}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Trap Bar Deadlift Section */}
+        {(session.trainingData.trapBarSets ?? []).length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-6">
+            <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-white">
+              Trap Bar Deadlift ({TRAINING_PROTOCOL.trapBarReps} reps)
+            </h2>
+            <div className="grid grid-cols-5 gap-3">
+              {(session.trainingData.trapBarSets ?? []).map((set) => (
+                <button
+                  key={set.id}
+                  onClick={() => handleSetToggle(set)}
+                  className={`aspect-square rounded-lg font-bold text-lg transition-all ${
+                    set.completed
+                      ? 'bg-orange-500 text-white shadow-lg scale-105'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {set.order}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Finish button */}
         <button onClick={handleFinishSession} className="w-full btn btn-success text-lg py-3">
@@ -358,7 +437,7 @@ export function TrainingSessionView() {
       <ConfirmDialog
         isOpen={showFinishConfirm}
         title="Incomplete Sets"
-        message={`You have ${10 - totalCompleted} incomplete sets. Finishing early will affect your next session's weight recommendation. Continue anyway?`}
+        message={`You have ${totalSets - totalCompleted} incomplete sets. Finishing early will affect your next session's weight recommendation. Continue anyway?`}
         confirmText="Finish Anyway"
         cancelText="Keep Training"
         onConfirm={completeSession}

@@ -35,6 +35,8 @@ export function StartView() {
   // Training session state
   const [hangWeight, setHangWeight] = useState(0);
   const [pullupWeight, setPullupWeight] = useState(0);
+  const [benchWeight, setBenchWeight] = useState(10);
+  const [trapBarWeight, setTrapBarWeight] = useState(20);
   const [trainingReason, setTrainingReason] = useState('');
 
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -71,6 +73,8 @@ export function StartView() {
     const trainingRec = getTrainingRecommendation(lastTrainingSession);
     setHangWeight(trainingRec.hangWeight);
     setPullupWeight(trainingRec.pullupWeight);
+    setBenchWeight(trainingRec.benchWeight);
+    setTrapBarWeight(trainingRec.trapBarWeight);
     setTrainingReason(trainingRec.reason);
   }, [navigate]);
 
@@ -106,19 +110,32 @@ export function StartView() {
         trainingData: {
           hangWeight,
           pullupWeight,
+          benchWeight,
+          trapBarWeight,
           hangSets: Array.from({ length: TRAINING_PROTOCOL.hangSets }, (_, i) => ({
             id: crypto.randomUUID(),
             order: i + 1,
-            exercise: 'hang',
+            exercise: 'hang' as const,
             completed: false,
           })),
           pullupSets: Array.from({ length: TRAINING_PROTOCOL.pullupSets }, (_, i) => ({
             id: crypto.randomUUID(),
             order: i + 1,
-            exercise: 'pullup',
+            exercise: 'pullup' as const,
             completed: false,
           })),
-          allSetsCompleted: false,
+          benchSets: Array.from({ length: TRAINING_PROTOCOL.benchSets }, (_, i) => ({
+            id: crypto.randomUUID(),
+            order: i + 1,
+            exercise: 'bench' as const,
+            completed: false,
+          })),
+          trapBarSets: Array.from({ length: TRAINING_PROTOCOL.trapBarSets }, (_, i) => ({
+            id: crypto.randomUUID(),
+            order: i + 1,
+            exercise: 'trapbar' as const,
+            completed: false,
+          })),
         },
       };
       newSession = trainingSession;
@@ -159,6 +176,8 @@ export function StartView() {
     const trainingRec = getTrainingRecommendation(lastTrainingSession);
     setHangWeight(trainingRec.hangWeight);
     setPullupWeight(trainingRec.pullupWeight);
+    setBenchWeight(trainingRec.benchWeight);
+    setTrapBarWeight(trainingRec.trapBarWeight);
     setTrainingReason(trainingRec.reason);
   };
 
@@ -283,7 +302,7 @@ export function StartView() {
                 />
               </div>
 
-              <div className="mb-6">
+              <div className="mb-4">
                 <label
                   htmlFor="pullupWeight"
                   className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
@@ -297,6 +316,42 @@ export function StartView() {
                   step="2.5"
                   value={pullupWeight}
                   onChange={(e) => setPullupWeight(parseFloat(e.target.value) || 0)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label
+                  htmlFor="benchWeight"
+                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
+                >
+                  Bench Press Weight (kg) - {TRAINING_PROTOCOL.benchSets} sets of {TRAINING_PROTOCOL.benchReps} reps
+                </label>
+                <input
+                  id="benchWeight"
+                  type="number"
+                  min="0"
+                  step="2.5"
+                  value={benchWeight}
+                  onChange={(e) => setBenchWeight(parseFloat(e.target.value) || 0)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="mb-6">
+                <label
+                  htmlFor="trapBarWeight"
+                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
+                >
+                  Trap Bar Deadlift Weight (kg) - {TRAINING_PROTOCOL.trapBarSets} sets of {TRAINING_PROTOCOL.trapBarReps} reps
+                </label>
+                <input
+                  id="trapBarWeight"
+                  type="number"
+                  min="0"
+                  step="2.5"
+                  value={trapBarWeight}
+                  onChange={(e) => setTrapBarWeight(parseFloat(e.target.value) || 0)}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
