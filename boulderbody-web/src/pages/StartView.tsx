@@ -4,6 +4,7 @@ import type { Session, VolumeSession, TrainingSession } from '../models/Session'
 import { isVolumeSession } from '../models/Session';
 import type { SessionType } from '../models/SessionType';
 import { TRAINING_PROTOCOL } from '../models/SessionType';
+import type { TrainingRecommendation } from '../logic/TrainingRecommender';
 import {
   getAllSessions,
   getCurrentSession,
@@ -17,6 +18,11 @@ import { getTrainingRecommendation } from '../logic/TrainingRecommender';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { SessionHistoryItem } from '../components/SessionHistoryItem';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+
+/** Round down to nearest 2.5kg increment */
+function roundTo2_5(weight: number): number {
+  return Math.floor(weight / 2.5) * 2.5;
+}
 
 /**
  * Start View - Home screen with session form and history.
@@ -38,6 +44,7 @@ export function StartView() {
   const [benchWeight, setBenchWeight] = useState(10);
   const [trapBarWeight, setTrapBarWeight] = useState(20);
   const [trainingReason, setTrainingReason] = useState('');
+  const [trainingRec, setTrainingRec] = useState<TrainingRecommendation | null>(null);
 
   const [deleteConfirm, setDeleteConfirm] = useState<{
     id: string;
@@ -68,14 +75,21 @@ export function StartView() {
     setBoulderCount(volumeRec.boulderCount);
     setVolumeReason(volumeRec.reason);
 
-    // Get training recommendation
+    // Get training recommendation (with break detection)
     const lastTrainingSession = getLastTrainingSession();
-    const trainingRec = getTrainingRecommendation(lastTrainingSession);
-    setHangWeight(trainingRec.hangWeight);
-    setPullupWeight(trainingRec.pullupWeight);
-    setBenchWeight(trainingRec.benchWeight);
-    setTrapBarWeight(trainingRec.trapBarWeight);
-    setTrainingReason(trainingRec.reason);
+    let daysSinceLastSession: number | null = null;
+    if (lastTrainingSession) {
+      daysSinceLastSession = Math.floor(
+        (Date.now() - lastTrainingSession.date.getTime()) / (1000 * 60 * 60 * 24)
+      );
+    }
+    const rec = getTrainingRecommendation(lastTrainingSession, daysSinceLastSession);
+    setHangWeight(rec.hangWeight);
+    setPullupWeight(rec.pullupWeight);
+    setBenchWeight(rec.benchWeight);
+    setTrapBarWeight(rec.trapBarWeight);
+    setTrainingReason(rec.reason);
+    setTrainingRec(rec);
   }, [navigate]);
 
   const handleStartSession = () => {
@@ -100,7 +114,7 @@ export function StartView() {
       saveSession(newSession);
       navigate(`/session/${newSession.id}`);
     } else {
-      // Create training session
+      // Create normal training session
       const trainingSession: TrainingSession = {
         id: crypto.randomUUID(),
         sessionType: 'training',
@@ -144,6 +158,70 @@ export function StartView() {
     }
   };
 
+  const handleStartRampUp = () => {
+    if (!trainingRec?.preBreakWeights) return;
+
+    const pbw = trainingRec.preBreakWeights;
+
+    // Start each exercise at 80% of target, rounded down to 2.5kg
+    const startHang = roundTo2_5(pbw.hang * 0.8);
+    const startPullup = roundTo2_5(pbw.pullup * 0.8);
+    const startBench = roundTo2_5(pbw.bench * 0.8);
+    const startTrapbar = roundTo2_5(pbw.trapbar * 0.8);
+
+    const trainingSession: TrainingSession = {
+      id: crypto.randomUUID(),
+      sessionType: 'training',
+      date: new Date(),
+      startTime: new Date(),
+      isFinished: false,
+      trainingData: {
+        hangWeight: startHang,
+        pullupWeight: startPullup,
+        benchWeight: startBench,
+        trapBarWeight: startTrapbar,
+        hangSets: [{
+          id: crypto.randomUUID(),
+          order: 1,
+          exercise: 'hang' as const,
+          completed: false,
+          setType: 'rampup',
+          weight: startHang,
+        }],
+        pullupSets: [{
+          id: crypto.randomUUID(),
+          order: 1,
+          exercise: 'pullup' as const,
+          completed: false,
+          setType: 'rampup',
+          weight: startPullup,
+        }],
+        benchSets: [{
+          id: crypto.randomUUID(),
+          order: 1,
+          exercise: 'bench' as const,
+          completed: false,
+          setType: 'rampup',
+          weight: startBench,
+        }],
+        trapBarSets: [{
+          id: crypto.randomUUID(),
+          order: 1,
+          exercise: 'trapbar' as const,
+          completed: false,
+          setType: 'rampup',
+          weight: startTrapbar,
+        }],
+        rampUp: {
+          preBreakWeights: pbw,
+        },
+      },
+    };
+
+    saveSession(trainingSession);
+    navigate(`/training/${trainingSession.id}`);
+  };
+
   const handleDeleteSession = (id: string) => {
     const session = sessions.find((s) => s.id === id);
     if (!session) return;
@@ -173,13 +251,22 @@ export function StartView() {
     setVolumeReason(volumeRec.reason);
 
     const lastTrainingSession = getLastTrainingSession();
-    const trainingRec = getTrainingRecommendation(lastTrainingSession);
-    setHangWeight(trainingRec.hangWeight);
-    setPullupWeight(trainingRec.pullupWeight);
-    setBenchWeight(trainingRec.benchWeight);
-    setTrapBarWeight(trainingRec.trapBarWeight);
-    setTrainingReason(trainingRec.reason);
+    let daysSinceLastSession: number | null = null;
+    if (lastTrainingSession) {
+      daysSinceLastSession = Math.floor(
+        (Date.now() - lastTrainingSession.date.getTime()) / (1000 * 60 * 60 * 24)
+      );
+    }
+    const rec = getTrainingRecommendation(lastTrainingSession, daysSinceLastSession);
+    setHangWeight(rec.hangWeight);
+    setPullupWeight(rec.pullupWeight);
+    setBenchWeight(rec.benchWeight);
+    setTrapBarWeight(rec.trapBarWeight);
+    setTrainingReason(rec.reason);
+    setTrainingRec(rec);
   };
+
+  const showRampUpBanner = sessionType === 'training' && trainingRec?.suggestRampUp;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
@@ -233,9 +320,27 @@ export function StartView() {
               <span className="font-medium">Recommendation:</span> {volumeReason}
             </div>
           )}
-          {sessionType === 'training' && trainingReason && (
+          {sessionType === 'training' && trainingReason && !showRampUpBanner && (
             <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
               <span className="font-medium">Recommendation:</span> {trainingReason}
+            </div>
+          )}
+
+          {/* Ramp-up banner */}
+          {showRampUpBanner && (
+            <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg">
+              <p className="text-sm text-amber-800 dark:text-amber-200 font-medium mb-1">
+                Break Detected
+              </p>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                {trainingReason}. Start with a ramp-up to safely find your current max.
+              </p>
+              <div className="grid grid-cols-2 gap-2 text-xs text-amber-600 dark:text-amber-400">
+                <span>Hangs: {trainingRec?.preBreakWeights?.hang}kg target</span>
+                <span>Pull-ups: {trainingRec?.preBreakWeights?.pullup}kg target</span>
+                <span>Bench: {trainingRec?.preBreakWeights?.bench}kg target</span>
+                <span>Trap Bar: {trainingRec?.preBreakWeights?.trapbar}kg target</span>
+              </div>
             </div>
           )}
 
@@ -358,13 +463,30 @@ export function StartView() {
             </>
           )}
 
-          {/* Start button */}
-          <button
-            onClick={handleStartSession}
-            className="w-full btn btn-primary text-lg py-3"
-          >
-            Start {sessionType === 'volume' ? 'Volume' : 'Training'} Session
-          </button>
+          {/* Start buttons */}
+          {showRampUpBanner ? (
+            <div className="space-y-3">
+              <button
+                onClick={handleStartRampUp}
+                className="w-full py-3 px-4 rounded-lg font-medium text-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
+              >
+                Start Ramp-Up
+              </button>
+              <button
+                onClick={handleStartSession}
+                className="w-full py-3 px-4 rounded-lg font-medium text-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"
+              >
+                Skip — Normal Weights
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleStartSession}
+              className="w-full btn btn-primary text-lg py-3"
+            >
+              Start {sessionType === 'volume' ? 'Volume' : 'Training'} Session
+            </button>
+          )}
         </div>
 
         {/* Session History */}
