@@ -46,6 +46,9 @@ export function StartView() {
   const [trainingReason, setTrainingReason] = useState('');
   const [trainingRec, setTrainingRec] = useState<TrainingRecommendation | null>(null);
 
+  // Manual ramp-up toggle
+  const [useManualRamp, setUseManualRamp] = useState(false);
+
   const [deleteConfirm, setDeleteConfirm] = useState<{
     id: string;
     date: string;
@@ -214,6 +217,74 @@ export function StartView() {
         }],
         rampUp: {
           preBreakWeights: pbw,
+        },
+      },
+    };
+
+    saveSession(trainingSession);
+    navigate(`/training/${trainingSession.id}`);
+  };
+
+  const handleStartManualRampUp = () => {
+    const limits = {
+      hang: hangWeight,
+      pullup: pullupWeight,
+      bench: benchWeight,
+      trapbar: trapBarWeight,
+    };
+
+    // Start each exercise at 80% of entered weight, rounded down to 2.5kg
+    const startHang = roundTo2_5(limits.hang * 0.8);
+    const startPullup = roundTo2_5(limits.pullup * 0.8);
+    const startBench = roundTo2_5(limits.bench * 0.8);
+    const startTrapbar = roundTo2_5(limits.trapbar * 0.8);
+
+    const trainingSession: TrainingSession = {
+      id: crypto.randomUUID(),
+      sessionType: 'training',
+      date: new Date(),
+      startTime: new Date(),
+      isFinished: false,
+      trainingData: {
+        hangWeight: startHang,
+        pullupWeight: startPullup,
+        benchWeight: startBench,
+        trapBarWeight: startTrapbar,
+        hangSets: [{
+          id: crypto.randomUUID(),
+          order: 1,
+          exercise: 'hang' as const,
+          completed: false,
+          setType: 'rampup',
+          weight: startHang,
+        }],
+        pullupSets: [{
+          id: crypto.randomUUID(),
+          order: 1,
+          exercise: 'pullup' as const,
+          completed: false,
+          setType: 'rampup',
+          weight: startPullup,
+        }],
+        benchSets: [{
+          id: crypto.randomUUID(),
+          order: 1,
+          exercise: 'bench' as const,
+          completed: false,
+          setType: 'rampup',
+          weight: startBench,
+        }],
+        trapBarSets: [{
+          id: crypto.randomUUID(),
+          order: 1,
+          exercise: 'trapbar' as const,
+          completed: false,
+          setType: 'rampup',
+          weight: startTrapbar,
+        }],
+        rampUp: {
+          preBreakWeights: limits,
+          isManual: true,
         },
       },
     };
@@ -443,7 +514,7 @@ export function StartView() {
                 />
               </div>
 
-              <div className="mb-6">
+              <div className="mb-4">
                 <label
                   htmlFor="trapBarWeight"
                   className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
@@ -460,6 +531,34 @@ export function StartView() {
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {/* Manual Ramp-Up Toggle */}
+              {!showRampUpBanner && (
+                <div className="mb-6">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <div
+                      className={`relative w-11 h-6 rounded-full transition-colors ${
+                        useManualRamp ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                      onClick={() => setUseManualRamp(!useManualRamp)}
+                    >
+                      <div
+                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                          useManualRamp ? 'translate-x-5' : ''
+                        }`}
+                      />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Use Ramp-Up Protocol
+                    </span>
+                  </label>
+                  {useManualRamp && (
+                    <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                      Starts at 80% of the weights above, then ramps up +2.5kg per set until you can't complete the reps/hold.
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -479,6 +578,13 @@ export function StartView() {
                 Skip — Normal Weights
               </button>
             </div>
+          ) : useManualRamp && sessionType === 'training' ? (
+            <button
+              onClick={handleStartManualRampUp}
+              className="w-full py-3 px-4 rounded-lg font-medium text-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
+            >
+              Start Ramp-Up Session
+            </button>
           ) : (
             <button
               onClick={handleStartSession}
