@@ -27,6 +27,9 @@ interface ConfirmDialogProps {
 
   /** Visual style variant (default: "default", danger for destructive actions) */
   variant?: 'danger' | 'default';
+
+  /** Whether clicking the backdrop closes the dialog (default: true) */
+  closeOnBackdrop?: boolean;
 }
 
 export function ConfirmDialog({
@@ -38,6 +41,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   variant = 'default',
+  closeOnBackdrop = true,
 }: ConfirmDialogProps) {
   if (!isOpen) {
     return null;
@@ -51,7 +55,7 @@ export function ConfirmDialog({
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-      onClick={onCancel} // Close on backdrop click
+      onClick={closeOnBackdrop ? onCancel : undefined}
     >
       <div
         className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full shadow-xl"

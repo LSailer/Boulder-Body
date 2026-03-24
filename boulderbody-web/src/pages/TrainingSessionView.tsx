@@ -579,6 +579,7 @@ export function TrainingSessionView() {
       {/* Ramp-up "Hit target?" prompt */}
       <ConfirmDialog
         isOpen={!!rampUpPrompt && !showRestTimer}
+        closeOnBackdrop={false}
         title="Hit Target?"
         message={
           rampUpPrompt
