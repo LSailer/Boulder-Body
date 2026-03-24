@@ -113,34 +113,29 @@ export function TrainingSessionView() {
     const { exercise, weight } = rampUpPrompt;
     const setsKey = getSetsKey(exercise);
     const sets = [...(session.trainingData[setsKey] ?? [])] as TrainingSet[];
-    const preBreakWeight = session.trainingData.rampUp!.preBreakWeights[exercise];
     const nextWeight = weight + WEIGHT_INCREMENT;
 
-    if (nextWeight > preBreakWeight) {
-      // Already at or above pre-break weight — this IS the max, generate working sets
-      finishRampUp(exercise, weight);
-    } else {
-      // Add another ramp-up set at higher weight
-      const newSet: TrainingSet = {
-        id: crypto.randomUUID(),
-        order: sets.length + 1,
-        exercise,
-        completed: false,
-        setType: 'rampup',
-        weight: nextWeight,
-      };
-      sets.push(newSet);
+    // User hit the target — add another ramp-up set at higher weight.
+    // The ramp continues until the user says "No" (can't complete reps/hold).
+    const newSet: TrainingSet = {
+      id: crypto.randomUUID(),
+      order: sets.length + 1,
+      exercise,
+      completed: false,
+      setType: 'rampup',
+      weight: nextWeight,
+    };
+    sets.push(newSet);
 
-      const updatedSession: TrainingSession = {
-        ...session,
-        trainingData: {
-          ...session.trainingData,
-          [setsKey]: sets,
-        },
-      };
-      updateSession(updatedSession);
-      setSession(updatedSession);
-    }
+    const updatedSession: TrainingSession = {
+      ...session,
+      trainingData: {
+        ...session.trainingData,
+        [setsKey]: sets,
+      },
+    };
+    updateSession(updatedSession);
+    setSession(updatedSession);
     setRampUpPrompt(null);
   };
 
@@ -430,10 +425,10 @@ export function TrainingSessionView() {
           )}
         </div>
 
-        {/* Pre-break target info during ramp-up */}
+        {/* Target info during ramp-up */}
         {isRampUp && preBreakWeight != null && (
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Pre-break target: {preBreakWeight}kg
+            {session!.trainingData.rampUp?.isManual ? 'Start weight' : 'Pre-break target'}: {preBreakWeight}kg
             {discoveredMax != null && (
               <span className={discoveredMax >= preBreakWeight ? ' text-green-600 dark:text-green-400' : ' text-amber-600 dark:text-amber-400'}>
                 {' '}— Max found: {discoveredMax}kg {discoveredMax >= preBreakWeight ? '(recovered!)' : ''}
@@ -492,7 +487,9 @@ export function TrainingSessionView() {
               ← Back
             </button>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {isRampUp ? 'Ramp-Up Session' : 'Training Session'}
+              {isRampUp
+                ? (session.trainingData.rampUp?.isManual ? 'Manual Ramp-Up' : 'Post-Break Ramp-Up')
+                : 'Training Session'}
             </h1>
             <button
               onClick={() => setShowBreakConfirm(true)}
@@ -513,7 +510,9 @@ export function TrainingSessionView() {
           )}
           {isRampUp && (
             <div className="text-center text-sm text-amber-600 dark:text-amber-400 font-medium">
-              Ramp-Up Mode — finding your current max per exercise
+              {session.trainingData.rampUp?.isManual
+                ? 'Manual Ramp-Up — finding your max per exercise'
+                : 'Ramp-Up Mode — finding your current max per exercise'}
             </div>
           )}
         </div>

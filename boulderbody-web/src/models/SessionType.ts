@@ -33,6 +33,8 @@ export interface RampUpData {
     bench: number;
     trapbar: number;
   };
+  /** Whether this ramp was manually initiated (vs auto-detected break) */
+  isManual?: boolean;
   discoveredMax?: {
     hang?: number;
     pullup?: number;
