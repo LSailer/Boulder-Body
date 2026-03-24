@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts';
-import type { Session } from '../models/Session';
+import type { Session, TrainingSession } from '../models/Session';
 import {
   isVolumeSession,
   isTrainingSession,
@@ -9,6 +9,7 @@ import {
   getSessionDuration,
   getFailRate,
 } from '../models/Session';
+import type { TrainingSet } from '../models/SessionType';
 import { getAllSessions, deleteSession, getLastTrainingSession } from '../logic/StorageManager';
 import { getTrainingRecommendation } from '../logic/TrainingRecommender';
 import { isExerciseComplete } from '../models/SessionType';
@@ -17,6 +18,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 /**
  * Summary View - Post-session statistics and charts.
  * Shows different summaries for volume vs training sessions.
+ * For ramp-up sessions, shows discovery progression per exercise.
  */
 export function SummaryView() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -204,7 +206,7 @@ export function SummaryView() {
         {isTrainingSession(session) && (
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-6">
             <h1 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white text-center">
-              Training Session
+              {session.trainingData.rampUp ? 'Ramp-Up Session' : 'Training Session'}
             </h1>
             <p className="text-center text-gray-500 dark:text-gray-400 mb-6">
               {dateStr}
@@ -220,68 +222,15 @@ export function SummaryView() {
               </p>
             </div>
 
-            {/* Set completion */}
-            <div className="space-y-4 mb-6">
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-blue-800 dark:text-blue-200 font-medium">
-                    Max Hangs
-                  </span>
-                  <span className="text-blue-900 dark:text-blue-100 font-bold">
-                    {session.trainingData.hangWeight}kg
-                  </span>
-                </div>
-                <div className="text-sm text-blue-600 dark:text-blue-300">
-                  {session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length} sets completed
-                </div>
-              </div>
+            {/* Ramp-up results */}
+            {session.trainingData.rampUp && (
+              <RampUpSummary session={session} />
+            )}
 
-              <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-purple-800 dark:text-purple-200 font-medium">
-                    Max Pull-ups
-                  </span>
-                  <span className="text-purple-900 dark:text-purple-100 font-bold">
-                    {session.trainingData.pullupWeight}kg
-                  </span>
-                </div>
-                <div className="text-sm text-purple-600 dark:text-purple-300">
-                  {session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length} sets completed
-                </div>
-              </div>
-
-              {(session.trainingData.benchSets ?? []).length > 0 && (
-                <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-green-800 dark:text-green-200 font-medium">
-                      Bench Press
-                    </span>
-                    <span className="text-green-900 dark:text-green-100 font-bold">
-                      {session.trainingData.benchWeight ?? 10}kg
-                    </span>
-                  </div>
-                  <div className="text-sm text-green-600 dark:text-green-300">
-                    {(session.trainingData.benchSets ?? []).filter(s => s.completed).length}/{(session.trainingData.benchSets ?? []).length} sets completed
-                  </div>
-                </div>
-              )}
-
-              {(session.trainingData.trapBarSets ?? []).length > 0 && (
-                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-orange-800 dark:text-orange-200 font-medium">
-                      Trap Bar Deadlift
-                    </span>
-                    <span className="text-orange-900 dark:text-orange-100 font-bold">
-                      {session.trainingData.trapBarWeight ?? 20}kg
-                    </span>
-                  </div>
-                  <div className="text-sm text-orange-600 dark:text-orange-300">
-                    {(session.trainingData.trapBarSets ?? []).filter(s => s.completed).length}/{(session.trainingData.trapBarSets ?? []).length} sets completed
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Normal training set completion (non-ramp-up) */}
+            {!session.trainingData.rampUp && (
+              <NormalTrainingSummary session={session} />
+            )}
 
             {/* All sets completion message */}
             {isExerciseComplete(session.trainingData.hangSets) &&
@@ -354,6 +303,132 @@ export function SummaryView() {
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
       />
+    </div>
+  );
+}
+
+/** Normal training summary — same as before */
+function NormalTrainingSummary({ session }: { session: TrainingSession }) {
+  return (
+    <div className="space-y-4 mb-6">
+      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-blue-800 dark:text-blue-200 font-medium">Max Hangs</span>
+          <span className="text-blue-900 dark:text-blue-100 font-bold">{session.trainingData.hangWeight}kg</span>
+        </div>
+        <div className="text-sm text-blue-600 dark:text-blue-300">
+          {session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length} sets completed
+        </div>
+      </div>
+
+      <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-purple-800 dark:text-purple-200 font-medium">Max Pull-ups</span>
+          <span className="text-purple-900 dark:text-purple-100 font-bold">{session.trainingData.pullupWeight}kg</span>
+        </div>
+        <div className="text-sm text-purple-600 dark:text-purple-300">
+          {session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length} sets completed
+        </div>
+      </div>
+
+      {(session.trainingData.benchSets ?? []).length > 0 && (
+        <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-green-800 dark:text-green-200 font-medium">Bench Press</span>
+            <span className="text-green-900 dark:text-green-100 font-bold">{session.trainingData.benchWeight ?? 10}kg</span>
+          </div>
+          <div className="text-sm text-green-600 dark:text-green-300">
+            {(session.trainingData.benchSets ?? []).filter(s => s.completed).length}/{(session.trainingData.benchSets ?? []).length} sets completed
+          </div>
+        </div>
+      )}
+
+      {(session.trainingData.trapBarSets ?? []).length > 0 && (
+        <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-orange-800 dark:text-orange-200 font-medium">Trap Bar Deadlift</span>
+            <span className="text-orange-900 dark:text-orange-100 font-bold">{session.trainingData.trapBarWeight ?? 20}kg</span>
+          </div>
+          <div className="text-sm text-orange-600 dark:text-orange-300">
+            {(session.trainingData.trapBarSets ?? []).filter(s => s.completed).length}/{(session.trainingData.trapBarSets ?? []).length} sets completed
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Ramp-up summary — shows discovery progression per exercise */
+function RampUpSummary({ session }: { session: TrainingSession }) {
+  const rampUp = session.trainingData.rampUp!;
+  const exercises: {
+    key: 'hang' | 'pullup' | 'bench' | 'trapbar';
+    label: string;
+    setsKey: 'hangSets' | 'pullupSets' | 'benchSets' | 'trapBarSets';
+    bgColor: string;
+    textColor: string;
+    subTextColor: string;
+  }[] = [
+    { key: 'hang', label: 'Max Hangs', setsKey: 'hangSets', bgColor: 'bg-blue-50 dark:bg-blue-900/20', textColor: 'text-blue-800 dark:text-blue-200', subTextColor: 'text-blue-600 dark:text-blue-300' },
+    { key: 'pullup', label: 'Max Pull-ups', setsKey: 'pullupSets', bgColor: 'bg-purple-50 dark:bg-purple-900/20', textColor: 'text-purple-800 dark:text-purple-200', subTextColor: 'text-purple-600 dark:text-purple-300' },
+    { key: 'bench', label: 'Bench Press', setsKey: 'benchSets', bgColor: 'bg-green-50 dark:bg-green-900/20', textColor: 'text-green-800 dark:text-green-200', subTextColor: 'text-green-600 dark:text-green-300' },
+    { key: 'trapbar', label: 'Trap Bar Deadlift', setsKey: 'trapBarSets', bgColor: 'bg-orange-50 dark:bg-orange-900/20', textColor: 'text-orange-800 dark:text-orange-200', subTextColor: 'text-orange-600 dark:text-orange-300' },
+  ];
+
+  return (
+    <div className="space-y-4 mb-6">
+      {exercises.map(({ key, label, setsKey, bgColor, textColor, subTextColor }) => {
+        const sets = (session.trainingData[setsKey] ?? []) as TrainingSet[];
+        if (sets.length === 0) return null;
+
+        const rampSets = sets.filter(s => s.setType === 'rampup');
+        const workingSets = sets.filter(s => s.setType === 'working');
+        const discoveredMax = rampUp.discoveredMax?.[key];
+        const preBreakWeight = rampUp.preBreakWeights[key];
+        const recovered = discoveredMax != null && discoveredMax >= preBreakWeight;
+
+        const startWeight = rampSets.length > 0 ? rampSets[0].weight : null;
+        const workingWeight = workingSets.length > 0 ? workingSets[0].weight : null;
+        const workingCompleted = workingSets.filter(s => s.completed).length;
+
+        return (
+          <div key={key} className={`p-4 ${bgColor} rounded-lg`}>
+            <div className="flex justify-between items-center mb-2">
+              <span className={`${textColor} font-medium`}>{label}</span>
+              {recovered ? (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300">
+                  Recovered
+                </span>
+              ) : discoveredMax != null ? (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                  Recovering
+                </span>
+              ) : (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                  Incomplete
+                </span>
+              )}
+            </div>
+            <div className={`text-sm ${subTextColor} space-y-1`}>
+              {startWeight != null && (
+                <p>
+                  Started at {startWeight}kg, ramped through {rampSets.length} set{rampSets.length !== 1 ? 's' : ''}
+                </p>
+              )}
+              {discoveredMax != null && (
+                <p>
+                  Max found: {discoveredMax}kg (target: {preBreakWeight}kg)
+                </p>
+              )}
+              {workingWeight != null && (
+                <p>
+                  Worked at {workingWeight}kg — {workingCompleted}/{workingSets.length} sets completed
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

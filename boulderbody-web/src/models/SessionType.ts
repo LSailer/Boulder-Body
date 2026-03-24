@@ -18,6 +18,27 @@ export interface TrainingSet {
   completed: boolean;
   timestamp?: Date;
   notes?: string;
+  setType?: 'rampup' | 'working'; // undefined = normal session set
+  weight?: number; // per-set weight (ramp-up sets vary in weight)
+}
+
+/**
+ * Ramp-up data for post-break sessions.
+ * Tracks the pre-break target weights and the discovered max per exercise.
+ */
+export interface RampUpData {
+  preBreakWeights: {
+    hang: number;
+    pullup: number;
+    bench: number;
+    trapbar: number;
+  };
+  discoveredMax?: {
+    hang?: number;
+    pullup?: number;
+    bench?: number;
+    trapbar?: number;
+  };
 }
 
 /**
@@ -33,6 +54,7 @@ export interface TrainingData {
   pullupSets: TrainingSet[]; // Always 5 sets
   benchSets?: TrainingSet[]; // absent in old sessions
   trapBarSets?: TrainingSet[];
+  rampUp?: RampUpData;
 }
 
 /**
