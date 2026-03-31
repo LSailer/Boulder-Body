@@ -738,7 +738,7 @@ export function TrainingSessionView() {
                 className={`flex-1 py-3 rounded-lg font-medium transition-all ${
                   warmupPhase === 'set1_done'
                     ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-200 border-2 border-amber-300 dark:border-amber-700'
-                    : warmupPhase === 'set2_done' || warmupPhase === 'complete'
+                    : warmupPhase === 'set2_done' || warmupPhase === 'resting_after'
                       ? 'bg-green-500 text-white'
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-600'
                 }`}
@@ -746,7 +746,7 @@ export function TrainingSessionView() {
                 {exercise === 'hang'
                   ? `${TRAINING_PROTOCOL.warmup.hang.set2Duration}s`
                   : `${TRAINING_PROTOCOL.warmup[exercise].set2Reps} reps`}
-                {(warmupPhase === 'set2_done' || warmupPhase === 'complete') && ' ✓'}
+                {(warmupPhase === 'set2_done' || warmupPhase === 'resting_after') && ' ✓'}
               </button>
             </div>
           </div>
