@@ -1,20 +1,9 @@
 import type { Session } from '../models/Session';
 import { isVolumeSession, isTrainingSession, getAttemptCounts, getSessionDuration } from '../models/Session';
 
-/**
- * List item component for displaying a past session.
- * Shows key stats and provides click navigation to summary.
- * Handles both volume and training session types.
- */
-
 interface SessionHistoryItemProps {
-  /** The session to display */
   session: Session;
-
-  /** Called when user clicks the card */
   onClick: () => void;
-
-  /** Called when user clicks delete button */
   onDelete: (id: string) => void;
 }
 
@@ -25,7 +14,6 @@ export function SessionHistoryItem({
 }: SessionHistoryItemProps) {
   const duration = getSessionDuration(session);
 
-  // Format date as "Jan 31, 2026"
   const dateStr = session.date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -41,7 +29,9 @@ export function SessionHistoryItem({
         <div>
           <div className="text-lg font-bold text-gray-900 dark:text-white">
             {isVolumeSession(session) && `Level ${session.targetLevel}`}
-            {isTrainingSession(session) && 'Training Session'}
+            {isTrainingSession(session) && (
+              session.trainingData.trainingMode === 'maxtest' ? 'Max Test' : 'Training Session'
+            )}
           </div>
           <div className="text-sm text-gray-500 dark:text-gray-400">
             {dateStr}
@@ -49,14 +39,14 @@ export function SessionHistoryItem({
         </div>
         <button
           onClick={(e) => {
-            e.stopPropagation(); // Prevent card click
+            e.stopPropagation();
             onDelete(session.id);
           }}
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
           aria-label="Delete session"
           title="Delete this session"
         >
-          <span className="text-xl">🗑️</span>
+          <span className="text-xl text-gray-400">×</span>
         </button>
       </div>
 
@@ -69,12 +59,8 @@ export function SessionHistoryItem({
               <span className="font-medium">{getAttemptCounts(session).done}</span> done,{' '}
               <span className="font-medium">{getAttemptCounts(session).fail}</span> fail
             </div>
-            <div className="text-right text-gray-500 dark:text-gray-400">
-              {duration}
-            </div>
+            <div className="text-right text-gray-500 dark:text-gray-400">{duration}</div>
           </div>
-
-          {/* Show unlogged count if any */}
           {getAttemptCounts(session).unlogged > 0 && (
             <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">
               {getAttemptCounts(session).unlogged} unlogged
@@ -86,27 +72,32 @@ export function SessionHistoryItem({
       {/* Training Session Stats */}
       {isTrainingSession(session) && (
         <div className="text-sm">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600 dark:text-gray-300 mb-1">
-            <div>
-              Hangs: {session.trainingData.hangWeight}kg ({session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length})
+          {session.trainingData.trainingMode === 'maxtest' && session.trainingData.maxTestData?.discoveredMax ? (
+            <div className="grid grid-cols-3 gap-x-4 text-gray-600 dark:text-gray-300 mb-1">
+              {session.trainingData.maxTestData.discoveredMax.hang != null && (
+                <div>Hang: {session.trainingData.maxTestData.discoveredMax.hang}kg</div>
+              )}
+              {session.trainingData.maxTestData.discoveredMax.pullup != null && (
+                <div>Pull-up: {session.trainingData.maxTestData.discoveredMax.pullup}kg</div>
+              )}
+              {session.trainingData.maxTestData.discoveredMax.bench != null && (
+                <div>Bench: {session.trainingData.maxTestData.discoveredMax.bench}kg</div>
+              )}
             </div>
-            <div>
-              Pull-ups: {session.trainingData.pullupWeight}kg ({session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length})
+          ) : (
+            <div className="grid grid-cols-3 gap-x-4 text-gray-600 dark:text-gray-300 mb-1">
+              <div>
+                Hang: {session.trainingData.hangWeight}kg ({session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length})
+              </div>
+              <div>
+                Pull-up: {session.trainingData.pullupWeight}kg ({session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length})
+              </div>
+              <div>
+                Bench: {session.trainingData.benchWeight}kg ({session.trainingData.benchSets.filter(s => s.completed).length}/{session.trainingData.benchSets.length})
+              </div>
             </div>
-            {(session.trainingData.benchSets ?? []).length > 0 && (
-              <div>
-                Bench: {session.trainingData.benchWeight ?? 10}kg ({(session.trainingData.benchSets ?? []).filter(s => s.completed).length}/{(session.trainingData.benchSets ?? []).length})
-              </div>
-            )}
-            {(session.trainingData.trapBarSets ?? []).length > 0 && (
-              <div>
-                Trap Bar: {session.trainingData.trapBarWeight ?? 20}kg ({(session.trainingData.trapBarSets ?? []).filter(s => s.completed).length}/{(session.trainingData.trapBarSets ?? []).length})
-              </div>
-            )}
-          </div>
-          <div className="text-right text-gray-500 dark:text-gray-400">
-            {duration}
-          </div>
+          )}
+          <div className="text-right text-gray-500 dark:text-gray-400">{duration}</div>
         </div>
       )}
     </div>

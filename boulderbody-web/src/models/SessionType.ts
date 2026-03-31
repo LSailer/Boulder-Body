@@ -2,82 +2,100 @@
  * SessionType.ts
  *
  * Defines training session data models and protocol constants.
- * Training sessions track max hangs and max pull-ups with structured sets.
+ * Training sessions support two modes:
+ *   - normal: 5 sets of 3 reps per exercise at fixed weight
+ *   - maxtest: warm-up → find 1RM → 3-4 training sets at max-7.5kg
  */
 
 export type SessionType = 'volume' | 'training';
+export type TrainingMode = 'normal' | 'maxtest';
+export type ExerciseKey = 'hang' | 'pullup' | 'bench';
 
 /**
  * Represents a single set within a training session.
- * Each training session has 10 sets total (5 hangs + 5 pull-ups).
  */
 export interface TrainingSet {
   id: string;
-  order: number; // 1-5 (per exercise)
-  exercise: 'hang' | 'pullup' | 'bench' | 'trapbar';
+  order: number;
+  exercise: ExerciseKey;
   completed: boolean;
   timestamp?: Date;
   notes?: string;
-  setType?: 'rampup' | 'working'; // undefined = normal session set
-  weight?: number; // per-set weight (ramp-up sets vary in weight)
+  setType?: 'warmup' | 'maxtest' | 'training';
+  weight?: number; // per-set weight (max test sets vary in weight)
 }
 
 /**
- * Ramp-up data for post-break sessions.
- * Tracks the pre-break target weights and the discovered max per exercise.
+ * Max test session data.
+ * Tracks starting weights, discovered maxes, and previous maxes for comparison.
  */
-export interface RampUpData {
-  preBreakWeights: {
+export interface MaxTestData {
+  startingWeights: {
     hang: number;
     pullup: number;
     bench: number;
-    trapbar: number;
   };
-  /** Whether this ramp was manually initiated (vs auto-detected break) */
-  isManual?: boolean;
   discoveredMax?: {
     hang?: number;
     pullup?: number;
     bench?: number;
-    trapbar?: number;
+  };
+  /** Previous max from last max test session, for delta display in summary */
+  previousMax?: {
+    hang?: number;
+    pullup?: number;
+    bench?: number;
   };
 }
 
 /**
  * Training session data structure.
- * Tracks separate weights for all exercises, allowing independent progression.
+ * Tracks separate weights for each exercise with independent progression.
  */
 export interface TrainingData {
+  trainingMode: TrainingMode;
   hangWeight: number; // kg added (0 = bodyweight)
   pullupWeight: number; // kg added (0 = bodyweight)
-  benchWeight?: number; // default 10kg
-  trapBarWeight?: number; // default 20kg
-  hangSets: TrainingSet[]; // Always 5 sets
-  pullupSets: TrainingSet[]; // Always 5 sets
-  benchSets?: TrainingSet[]; // absent in old sessions
-  trapBarSets?: TrainingSet[];
-  rampUp?: RampUpData;
+  benchWeight: number; // kg
+  hangSets: TrainingSet[];
+  pullupSets: TrainingSet[];
+  benchSets: TrainingSet[];
+  maxTestData?: MaxTestData; // only present in maxtest sessions
 }
 
 /**
  * Training protocol constants.
- * Based on standard max strength training principles:
- * - Max hangs: 7 seconds × 3 reps with 3 min rest
- * - Max pull-ups: 3 reps with 3 min rest
- * - Bench press: 3 reps with 3 min rest
- * - Trap bar deadlift: 3 reps with 3 min rest
  */
 export const TRAINING_PROTOCOL = {
-  hangSets: 5,
+  // Hang specifics
   hangDuration: 7, // seconds per hang
-  hangReps: 3, // hangs per set
-  pullupSets: 5,
-  pullupReps: 3, // pull-ups per set
-  benchSets: 5,
-  benchReps: 3,
-  trapBarSets: 5,
-  trapBarReps: 3,
-  restBetweenSets: 180, // 3 minutes in seconds
+
+  // Warm-up protocol (per exercise)
+  warmup: {
+    hang: { set1Duration: 10, set2Duration: 15, restBetween: 30, restAfter: 180 },
+    pullup: { set1Reps: 5, set2Reps: 3, restBetween: 30, restAfter: 180 },
+    bench: { set1Reps: 5, set2Reps: 3, restBetween: 30, restAfter: 180 },
+  },
+
+  // Normal training session
+  training: {
+    sets: 5,
+    reps: 3,
+    restBetweenSets: 180,
+  },
+
+  // Max test session
+  maxTest: {
+    weightIncrement: 2.5,
+    trainingOffset: 7.5, // training weight = max - 7.5kg
+    trainingSets: 3, // base training sets after max found
+    maxTrainingSets: 4, // can add 1 optional extra
+    trainingReps: 3,
+    restBetweenSets: 180,
+  },
+
+  // Rest between exercises
+  restBetweenExercises: 180,
 } as const;
 
 /**
