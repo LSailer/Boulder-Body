@@ -7,7 +7,7 @@
  *   - maxtest: training weight = discoveredMax - 7.5kg
  *
  * Also calculates max test starting weights (last training weight - 5kg).
- * Suggests max test when >7 days since last session.
+ * Suggests max test when >10 days since last session.
  */
 
 import type { TrainingSession } from '../models/Session';
@@ -33,7 +33,7 @@ const DEFAULT_WEIGHT = 0;
 const DEFAULT_BENCH_WEIGHT = 10;
 const WEIGHT_INCREMENT = 2.5;
 const MAX_TEST_START_OFFSET = 5; // start max test at last training weight - 5kg
-const BREAK_THRESHOLD_DAYS = 7;
+const BREAK_THRESHOLD_DAYS = 10;
 
 /** Round down to nearest 2.5kg increment, minimum 0 */
 function roundTo2_5(weight: number): number {
