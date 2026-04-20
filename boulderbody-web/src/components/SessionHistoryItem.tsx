@@ -88,10 +88,10 @@ export function SessionHistoryItem({
         <div className="text-sm">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600 dark:text-gray-300 mb-1">
             <div>
-              Hangs: {session.trainingData.hangWeight}kg ({session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length})
+              Hangs: {session.trainingData.discoveredMax?.hang != null ? `max ${session.trainingData.discoveredMax.hang}kg` : '—'} ({session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length})
             </div>
             <div>
-              Pull-ups: {session.trainingData.pullupWeight}kg ({session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length})
+              Pull-ups: {session.trainingData.discoveredMax?.pullup != null ? `max ${session.trainingData.discoveredMax.pullup}kg` : '—'} ({session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length})
             </div>
             {(session.trainingData.benchSets ?? []).length > 0 && (
               <div>

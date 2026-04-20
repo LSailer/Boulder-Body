@@ -14,7 +14,7 @@ interface StorageSchema {
   sessions: Session[];
 }
 
-const CURRENT_VERSION = 3; // Incremented for bench + trapbar exercises
+const CURRENT_VERSION = 4; // v4: drop legacy training sessions (ramp-up shape incompatible with 9c protocol)
 
 /**
  * Migrate v1 schema (pre-sessionType) to v2.
@@ -52,6 +52,22 @@ function migrateV2toV3(data: any): StorageSchema {
         },
       };
     }),
+  };
+}
+
+/**
+ * Migrate v3 schema to v4.
+ *
+ * The 9c-style training protocol replaces the old fixed-weight + ramp-up shape
+ * (hangWeight, pullupWeight, rampUp) with a max-test / working structure. Old
+ * training sessions can't be rendered in the new shape without fabricating a
+ * discoveredMax, so we drop them. Volume sessions are untouched.
+ */
+function migrateV3toV4(data: any): StorageSchema {
+  console.log('Migrating storage from v3 to v4 — dropping legacy training sessions...');
+  return {
+    version: 4,
+    sessions: data.sessions.filter((s: any) => s.sessionType !== 'training'),
   };
 }
 
@@ -126,6 +142,9 @@ export function getAllSessions(): Session[] {
       }
       if (data.version < 3) {
         data = migrateV2toV3(data);
+      }
+      if (data.version < 4) {
+        data = migrateV3toV4(data);
       }
       // Save migrated data immediately
       try {
