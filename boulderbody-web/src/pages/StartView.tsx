@@ -2,27 +2,26 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Session, VolumeSession, TrainingSession } from '../models/Session';
 import { isVolumeSession } from '../models/Session';
-import type { SessionType, TrainingMode } from '../models/SessionType';
+import type { SessionType } from '../models/SessionType';
 import { TRAINING_PROTOCOL } from '../models/SessionType';
 import type { TrainingRecommendation } from '../logic/TrainingRecommender';
-import { getTrainingRecommendation, getMaxTestStartingWeights, getLastMaxTestResults } from '../logic/TrainingRecommender';
 import {
   getAllSessions,
   getCurrentSession,
   getLastVolumeSession,
   getLastTrainingSession,
-  getAllTrainingSessions,
   saveSession,
   deleteSession,
 } from '../logic/StorageManager';
 import { getRecommendation } from '../logic/SessionRecommender';
+import { getTrainingRecommendation } from '../logic/TrainingRecommender';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { SessionHistoryItem } from '../components/SessionHistoryItem';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
 /**
  * Start View - Home screen with session form and history.
- * Supports volume sessions, normal training, and max test sessions.
+ * Displays recommended settings based on past performance for both session types.
  */
 export function StartView() {
   const navigate = useNavigate();
@@ -34,20 +33,11 @@ export function StartView() {
   const [boulderCount, setBoulderCount] = useState(20);
   const [volumeReason, setVolumeReason] = useState('');
 
-  // Training mode (normal vs maxtest)
-  const [trainingMode, setTrainingMode] = useState<TrainingMode>('normal');
-
   // Training session state
-  const [hangWeight, setHangWeight] = useState(0);
-  const [pullupWeight, setPullupWeight] = useState(0);
   const [benchWeight, setBenchWeight] = useState(10);
+  const [trapBarWeight, setTrapBarWeight] = useState(20);
   const [trainingReason, setTrainingReason] = useState('');
   const [trainingRec, setTrainingRec] = useState<TrainingRecommendation | null>(null);
-
-  // Max test starting weights
-  const [maxTestHang, setMaxTestHang] = useState(0);
-  const [maxTestPullup, setMaxTestPullup] = useState(0);
-  const [maxTestBench, setMaxTestBench] = useState(10);
 
   const [deleteConfirm, setDeleteConfirm] = useState<{
     id: string;
@@ -62,6 +52,7 @@ export function StartView() {
     // Check if there's an active session
     const activeSession = getCurrentSession();
     if (activeSession) {
+      // Resume active session - route based on type
       if (isVolumeSession(activeSession)) {
         navigate(`/session/${activeSession.id}`);
       } else {
@@ -79,35 +70,18 @@ export function StartView() {
 
     // Get training recommendation
     const lastTrainingSession = getLastTrainingSession();
-    let daysSinceLastSession: number | null = null;
-    if (lastTrainingSession) {
-      daysSinceLastSession = Math.floor(
-        (Date.now() - lastTrainingSession.date.getTime()) / (1000 * 60 * 60 * 24)
-      );
-    }
-    const rec = getTrainingRecommendation(lastTrainingSession, daysSinceLastSession);
-    setHangWeight(rec.hangWeight);
-    setPullupWeight(rec.pullupWeight);
+    const rec = getTrainingRecommendation(lastTrainingSession);
     setBenchWeight(rec.benchWeight);
+    setTrapBarWeight(rec.trapBarWeight);
     setTrainingReason(rec.reason);
     setTrainingRec(rec);
-
-    // Auto-select training mode based on break detection
-    if (rec.suggestMaxTest) {
-      setTrainingMode('maxtest');
-    } else {
-      setTrainingMode('normal');
-    }
-
-    // Get max test starting weights
-    const maxTestStart = getMaxTestStartingWeights(lastTrainingSession);
-    setMaxTestHang(maxTestStart.hang);
-    setMaxTestPullup(maxTestStart.pullup);
-    setMaxTestBench(maxTestStart.bench);
   }, [navigate]);
 
   const handleStartSession = () => {
+    let newSession: Session;
+
     if (sessionType === 'volume') {
+      // Create volume session
       const volumeSession: VolumeSession = {
         id: crypto.randomUUID(),
         sessionType: 'volume',
@@ -121,44 +95,13 @@ export function StartView() {
           order: i + 1,
         })),
       };
-      saveSession(volumeSession);
-      navigate(`/session/${volumeSession.id}`);
-      return;
-    }
-
-    if (trainingMode === 'maxtest') {
-      // Get previous max for comparison in summary
-      const allTraining = getAllTrainingSessions();
-      const previousMax = getLastMaxTestResults(allTraining) ?? undefined;
-
-      const trainingSession: TrainingSession = {
-        id: crypto.randomUUID(),
-        sessionType: 'training',
-        date: new Date(),
-        startTime: new Date(),
-        isFinished: false,
-        trainingData: {
-          trainingMode: 'maxtest',
-          hangWeight: maxTestHang,
-          pullupWeight: maxTestPullup,
-          benchWeight: maxTestBench,
-          hangSets: [],   // Sets generated dynamically during session
-          pullupSets: [],
-          benchSets: [],
-          maxTestData: {
-            startingWeights: {
-              hang: maxTestHang,
-              pullup: maxTestPullup,
-              bench: maxTestBench,
-            },
-            previousMax: previousMax ?? undefined,
-          },
-        },
-      };
-      saveSession(trainingSession);
-      navigate(`/training/${trainingSession.id}`);
+      newSession = volumeSession;
+      saveSession(newSession);
+      navigate(`/session/${newSession.id}`);
     } else {
-      // Normal training session with warmup + 5 sets
+      // Create training session. Hang and pull-up start empty — TrainingSessionView
+      // appends the first max-test set using recommender.hangStart / pullupStart.
+      // Bench and trap-bar keep their fixed-weight 5-set scaffolding.
       const trainingSession: TrainingSession = {
         id: crypto.randomUUID(),
         sessionType: 'training',
@@ -166,32 +109,27 @@ export function StartView() {
         startTime: new Date(),
         isFinished: false,
         trainingData: {
-          trainingMode: 'normal',
-          hangWeight,
-          pullupWeight,
           benchWeight,
-          hangSets: Array.from({ length: TRAINING_PROTOCOL.training.sets }, (_, i) => ({
-            id: crypto.randomUUID(),
-            order: i + 1,
-            exercise: 'hang' as const,
-            completed: false,
-          })),
-          pullupSets: Array.from({ length: TRAINING_PROTOCOL.training.sets }, (_, i) => ({
-            id: crypto.randomUUID(),
-            order: i + 1,
-            exercise: 'pullup' as const,
-            completed: false,
-          })),
-          benchSets: Array.from({ length: TRAINING_PROTOCOL.training.sets }, (_, i) => ({
+          trapBarWeight,
+          hangSets: [],
+          pullupSets: [],
+          benchSets: Array.from({ length: TRAINING_PROTOCOL.benchSets }, (_, i) => ({
             id: crypto.randomUUID(),
             order: i + 1,
             exercise: 'bench' as const,
             completed: false,
           })),
+          trapBarSets: Array.from({ length: TRAINING_PROTOCOL.trapBarSets }, (_, i) => ({
+            id: crypto.randomUUID(),
+            order: i + 1,
+            exercise: 'trapbar' as const,
+            completed: false,
+          })),
         },
       };
-      saveSession(trainingSession);
-      navigate(`/training/${trainingSession.id}`);
+      newSession = trainingSession;
+      saveSession(newSession);
+      navigate(`/training/${newSession.id}`);
     }
   };
 
@@ -216,7 +154,7 @@ export function StartView() {
     setSessions(sessions.filter((s) => s.id !== deleteConfirm.id));
     setDeleteConfirm(null);
 
-    // Recalculate recommendations
+    // Recalculate both recommendations after deletion
     const lastVolumeSession = getLastVolumeSession();
     const volumeRec = getRecommendation(lastVolumeSession);
     setLevel(volumeRec.level);
@@ -224,26 +162,17 @@ export function StartView() {
     setVolumeReason(volumeRec.reason);
 
     const lastTrainingSession = getLastTrainingSession();
-    let daysSinceLastSession: number | null = null;
-    if (lastTrainingSession) {
-      daysSinceLastSession = Math.floor(
-        (Date.now() - lastTrainingSession.date.getTime()) / (1000 * 60 * 60 * 24)
-      );
-    }
-    const rec = getTrainingRecommendation(lastTrainingSession, daysSinceLastSession);
-    setHangWeight(rec.hangWeight);
-    setPullupWeight(rec.pullupWeight);
+    const rec = getTrainingRecommendation(lastTrainingSession);
     setBenchWeight(rec.benchWeight);
+    setTrapBarWeight(rec.trapBarWeight);
     setTrainingReason(rec.reason);
     setTrainingRec(rec);
-
-    const maxTestStart = getMaxTestStartingWeights(lastTrainingSession);
-    setMaxTestHang(maxTestStart.hang);
-    setMaxTestPullup(maxTestStart.pullup);
-    setMaxTestBench(maxTestStart.bench);
   };
 
-  const showBreakBanner = sessionType === 'training' && trainingRec?.suggestMaxTest;
+  // Last-max context for display above the Start button
+  const lastHangMax = trainingRec?.lastMax?.hang;
+  const lastPullupMax = trainingRec?.lastMax?.pullup;
+  const hasLastMax = lastHangMax != null || lastPullupMax != null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
@@ -291,52 +220,33 @@ export function StartView() {
             </div>
           </div>
 
-          {/* Training mode auto-selected, with switch link */}
-          {sessionType === 'training' && (
-            <div className="mb-4 text-center">
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                Mode: <span className="font-medium text-gray-900 dark:text-white">{trainingMode === 'maxtest' ? 'Max Test' : 'Training'}</span>
-                {' · '}
-                <button
-                  onClick={() => setTrainingMode(trainingMode === 'maxtest' ? 'normal' : 'maxtest')}
-                  className="text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  Switch to {trainingMode === 'maxtest' ? 'Training' : 'Max Test'}
-                </button>
-              </span>
-            </div>
-          )}
-
-          {/* Recommendation / break banner */}
+          {/* Recommendation reason */}
           {sessionType === 'volume' && volumeReason && (
             <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
               <span className="font-medium">Recommendation:</span> {volumeReason}
             </div>
           )}
-          {sessionType === 'training' && trainingMode === 'normal' && trainingReason && !showBreakBanner && (
+          {sessionType === 'training' && trainingRec && (
             <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-              <span className="font-medium">Recommendation:</span> {trainingReason}
-            </div>
-          )}
-          {showBreakBanner && trainingMode === 'normal' && (
-            <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg">
-              <p className="text-sm text-amber-800 dark:text-amber-200 font-medium mb-1">
-                Break Detected
-              </p>
-              <p className="text-sm text-amber-700 dark:text-amber-300">
-                {trainingReason}. Consider switching to Max Test mode.
-              </p>
-            </div>
-          )}
-          {sessionType === 'training' && trainingMode === 'maxtest' && (
-            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-200">
-              Find your 1RM for each exercise, then train at max - {TRAINING_PROTOCOL.maxTest.trainingOffset}kg
+              {hasLastMax ? (
+                <>
+                  <div>
+                    <span className="font-medium">Last max:</span> hang {lastHangMax ?? 0}kg, pullup {lastPullupMax ?? 0}kg
+                  </div>
+                  <div className="mt-1">
+                    <span className="font-medium">Starting today at:</span> {trainingRec.hangStart}kg / {trainingRec.pullupStart}kg
+                  </div>
+                </>
+              ) : (
+                <span>{trainingReason}</span>
+              )}
             </div>
           )}
 
           {/* Volume Session Inputs */}
           {sessionType === 'volume' && (
             <>
+              {/* Level input */}
               <div className="mb-4">
                 <label
                   htmlFor="level"
@@ -354,6 +264,7 @@ export function StartView() {
                 />
               </div>
 
+              {/* Boulder count input */}
               <div className="mb-6">
                 <label
                   htmlFor="boulderCount"
@@ -374,42 +285,15 @@ export function StartView() {
             </>
           )}
 
-          {/* Training Session Inputs (Normal Mode) */}
-          {sessionType === 'training' && trainingMode === 'normal' && (
+          {/* Training Session Inputs */}
+          {sessionType === 'training' && (
             <>
               <div className="mb-4">
-                <label htmlFor="hangWeight" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Hang Weight (kg) — {TRAINING_PROTOCOL.training.sets} sets of {TRAINING_PROTOCOL.hangDuration}s × {TRAINING_PROTOCOL.training.reps}
-                </label>
-                <input
-                  id="hangWeight"
-                  type="number"
-                  min="0"
-                  step="2.5"
-                  value={hangWeight}
-                  onChange={(e) => setHangWeight(parseFloat(e.target.value) || 0)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label htmlFor="pullupWeight" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Pull-up Weight (kg) — {TRAINING_PROTOCOL.training.sets} sets of {TRAINING_PROTOCOL.training.reps} reps
-                </label>
-                <input
-                  id="pullupWeight"
-                  type="number"
-                  min="0"
-                  step="2.5"
-                  value={pullupWeight}
-                  onChange={(e) => setPullupWeight(parseFloat(e.target.value) || 0)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="mb-6">
-                <label htmlFor="benchWeight" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Bench Press Weight (kg) — {TRAINING_PROTOCOL.training.sets} sets of {TRAINING_PROTOCOL.training.reps} reps
+                <label
+                  htmlFor="benchWeight"
+                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
+                >
+                  Bench Press Weight (kg) - {TRAINING_PROTOCOL.benchSets} sets of {TRAINING_PROTOCOL.benchReps} reps
                 </label>
                 <input
                   id="benchWeight"
@@ -421,53 +305,21 @@ export function StartView() {
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-            </>
-          )}
-
-          {/* Max Test Starting Weights */}
-          {sessionType === 'training' && trainingMode === 'maxtest' && (
-            <>
-              <div className="mb-4">
-                <label htmlFor="maxTestHang" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Hang Starting Weight (kg)
-                </label>
-                <input
-                  id="maxTestHang"
-                  type="number"
-                  min="0"
-                  step="2.5"
-                  value={maxTestHang}
-                  onChange={(e) => setMaxTestHang(parseFloat(e.target.value) || 0)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
 
               <div className="mb-4">
-                <label htmlFor="maxTestPullup" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Pull-up Starting Weight (kg)
+                <label
+                  htmlFor="trapBarWeight"
+                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
+                >
+                  Trap Bar Deadlift Weight (kg) - {TRAINING_PROTOCOL.trapBarSets} sets of {TRAINING_PROTOCOL.trapBarReps} reps
                 </label>
                 <input
-                  id="maxTestPullup"
+                  id="trapBarWeight"
                   type="number"
                   min="0"
                   step="2.5"
-                  value={maxTestPullup}
-                  onChange={(e) => setMaxTestPullup(parseFloat(e.target.value) || 0)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="mb-6">
-                <label htmlFor="maxTestBench" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Bench Press Starting Weight (kg)
-                </label>
-                <input
-                  id="maxTestBench"
-                  type="number"
-                  min="0"
-                  step="2.5"
-                  value={maxTestBench}
-                  onChange={(e) => setMaxTestBench(parseFloat(e.target.value) || 0)}
+                  value={trapBarWeight}
+                  onChange={(e) => setTrapBarWeight(parseFloat(e.target.value) || 0)}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -477,17 +329,9 @@ export function StartView() {
           {/* Start button */}
           <button
             onClick={handleStartSession}
-            className={`w-full py-3 px-4 rounded-lg font-medium text-lg text-white transition-colors ${
-              sessionType === 'training' && trainingMode === 'maxtest'
-                ? 'bg-amber-500 hover:bg-amber-600'
-                : 'btn btn-primary'
-            }`}
+            className="w-full btn btn-primary text-lg py-3"
           >
-            {sessionType === 'volume'
-              ? 'Start Volume Session'
-              : trainingMode === 'maxtest'
-                ? 'Start Max Test'
-                : 'Start Training Session'}
+            Start {sessionType === 'volume' ? 'Volume' : 'Training'} Session
           </button>
         </div>
 

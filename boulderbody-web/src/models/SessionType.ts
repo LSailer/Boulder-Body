@@ -2,100 +2,70 @@
  * SessionType.ts
  *
  * Defines training session data models and protocol constants.
- * Training sessions support two modes:
- *   - normal: 5 sets of 3 reps per exercise at fixed weight
- *   - maxtest: warm-up → find 1RM → 3-4 training sets at max-7.5kg
+ * Training sessions discover today's max per exercise (max-test) and run working
+ * sets at 80% of that max. Bench and trap-bar are fixed-weight (unchanged).
  */
 
 export type SessionType = 'volume' | 'training';
-export type TrainingMode = 'normal' | 'maxtest';
-export type ExerciseKey = 'hang' | 'pullup' | 'bench';
 
 /**
  * Represents a single set within a training session.
+ *
+ * `setType` distinguishes max-test sets (variable weight, +2.5kg per step) from
+ * working sets (fixed at 80% of discovered max) for hang and pull-up. Undefined
+ * for bench and trap-bar, which use a single fixed weight per session.
  */
 export interface TrainingSet {
   id: string;
   order: number;
-  exercise: ExerciseKey;
+  exercise: 'hang' | 'pullup' | 'bench' | 'trapbar';
   completed: boolean;
   timestamp?: Date;
   notes?: string;
-  setType?: 'warmup' | 'maxtest' | 'training';
-  weight?: number; // per-set weight (max test sets vary in weight)
-}
-
-/**
- * Max test session data.
- * Tracks starting weights, discovered maxes, and previous maxes for comparison.
- */
-export interface MaxTestData {
-  startingWeights: {
-    hang: number;
-    pullup: number;
-    bench: number;
-  };
-  discoveredMax?: {
-    hang?: number;
-    pullup?: number;
-    bench?: number;
-  };
-  /** Previous max from last max test session, for delta display in summary */
-  previousMax?: {
-    hang?: number;
-    pullup?: number;
-    bench?: number;
-  };
+  setType?: 'maxtest' | 'working';
+  weight?: number;
 }
 
 /**
  * Training session data structure.
- * Tracks separate weights for each exercise with independent progression.
+ *
+ * For hang and pull-up, sets are split into max-test (N sets at +2.5kg steps)
+ * and working (3 sets at 80% of discovered max, floored). Bench and trap-bar
+ * remain fixed-weight (5 × 3).
  */
 export interface TrainingData {
-  trainingMode: TrainingMode;
-  hangWeight: number; // kg added (0 = bodyweight)
-  pullupWeight: number; // kg added (0 = bodyweight)
-  benchWeight: number; // kg
+  benchWeight?: number;
+  trapBarWeight?: number;
   hangSets: TrainingSet[];
   pullupSets: TrainingSet[];
-  benchSets: TrainingSet[];
-  maxTestData?: MaxTestData; // only present in maxtest sessions
+  benchSets?: TrainingSet[];
+  trapBarSets?: TrainingSet[];
+  /**
+   * Discovered max per exercise for this session.
+   * Populated as the user completes each max-test phase.
+   */
+  discoveredMax?: {
+    hang?: number;
+    pullup?: number;
+  };
 }
 
 /**
  * Training protocol constants.
+ * Hang and pull-up: 3 working sets × 3 reps after max-test.
+ * Bench and trap-bar: 5 sets × 3 reps (unchanged).
  */
 export const TRAINING_PROTOCOL = {
-  // Hang specifics
-  hangDuration: 7, // seconds per hang
-
-  // Warm-up protocol (per exercise)
-  warmup: {
-    hang: { set1Duration: 10, set2Duration: 15, restBetween: 30, restAfter: 180 },
-    pullup: { set1Reps: 5, set2Reps: 3, restBetween: 30, restAfter: 180 },
-    bench: { set1Reps: 5, set2Reps: 3, restBetween: 30, restAfter: 180 },
-  },
-
-  // Normal training session
-  training: {
-    sets: 5,
-    reps: 3,
-    restBetweenSets: 180,
-  },
-
-  // Max test session
-  maxTest: {
-    weightIncrement: 2.5,
-    trainingOffset: 7.5, // training weight = max - 7.5kg
-    trainingSets: 3, // base training sets after max found
-    maxTrainingSets: 4, // can add 1 optional extra
-    trainingReps: 3,
-    restBetweenSets: 180,
-  },
-
-  // Rest between exercises
-  restBetweenExercises: 180,
+  hangDuration: 7,
+  maxTestHangDuration: 5,
+  hangReps: 3,
+  pullupReps: 3,
+  benchSets: 5,
+  benchReps: 3,
+  trapBarSets: 5,
+  trapBarReps: 3,
+  restBetweenSets: 180,
+  prepBeforeHang: 5,
 } as const;
 
 /**

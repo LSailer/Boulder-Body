@@ -1,16 +1,15 @@
 /**
  * RestTimer.tsx
  *
- * Non-blocking timer bar fixed at the bottom of the screen.
- * Used for rest periods, warm-up rests, and prep countdowns.
- * Does not block interaction with the page — user can scroll and view their session.
- * Shows "Ready!" with green background when complete.
+ * Timer modal used for prep countdown, hang timer, and rest periods.
+ * Shows circular progress with countdown display.
+ * Optional skip button (when onSkip provided) and pause/resume (when onPause provided).
  */
 
 import { useState, useEffect } from 'react';
 
 interface RestTimerProps {
-  /** Whether the timer bar is visible */
+  /** Whether the timer modal is visible */
   isOpen: boolean;
 
   /** Total duration in seconds */
@@ -28,7 +27,7 @@ interface RestTimerProps {
   /** Controlled pause state (pair with onPause) */
   isPaused?: boolean;
 
-  /** Label — defaults to "Rest" */
+  /** Modal heading — defaults to "Rest Time" */
   title?: string;
 }
 
@@ -39,28 +38,25 @@ export function RestTimer({
   onSkip,
   onPause,
   isPaused = false,
-  title = 'Rest',
+  title = 'Rest Time',
 }: RestTimerProps) {
   const [timeRemaining, setTimeRemaining] = useState(duration);
-  const [isDone, setIsDone] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
-      setTimeRemaining(duration);
-      setIsDone(false);
+      setTimeRemaining(duration); // Reset when closed
       return;
     }
 
-    if (isPaused || isDone) {
-      return;
+    if (isPaused) {
+      return; // Interval suspended — timeRemaining preserved
     }
 
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          setIsDone(true);
-          setTimeout(onComplete, 1500); // Show "Ready!" briefly
+          setTimeout(onComplete, 500);
           return 0;
         }
         return prev - 1;
@@ -68,7 +64,7 @@ export function RestTimer({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOpen, duration, onComplete, isPaused, isDone]);
+  }, [isOpen, duration, onComplete, isPaused]);
 
   if (!isOpen) {
     return null;
@@ -77,46 +73,71 @@ export function RestTimer({
   const minutes = Math.floor(timeRemaining / 60);
   const seconds = timeRemaining % 60;
   const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
   const progressPercent = ((duration - timeRemaining) / duration) * 100;
 
-  return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 safe-area-bottom">
-      {/* Progress bar */}
-      <div className="w-full h-1 bg-gray-300 dark:bg-gray-700">
-        <div
-          className={`h-1 transition-all duration-1000 ease-linear ${
-            isDone ? 'bg-green-500' : 'bg-blue-500'
-          }`}
-          style={{ width: `${progressPercent}%` }}
-        />
-      </div>
+  const radius = 100;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
 
-      {/* Timer bar */}
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
       <div
-        className={`px-4 py-3 flex items-center justify-between ${
-          isDone
-            ? 'bg-green-600 text-white'
-            : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-t border-gray-200 dark:border-gray-700'
-        }`}
+        className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-md w-full shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Left: title + time */}
-        <div className="flex items-center gap-3">
-          <span className="font-medium text-sm">{title}</span>
-          <span className={`font-bold text-lg tabular-nums ${isDone ? 'text-white' : ''}`}>
-            {isDone ? 'Ready!' : timeString}
-          </span>
-          {isPaused && !isDone && (
-            <span className="text-xs font-medium text-amber-500">PAUSED</span>
-          )}
+        <h2 className="text-2xl font-bold mb-6 text-center text-gray-900 dark:text-white">
+          {title}
+        </h2>
+
+        {/* Circular progress timer */}
+        <div className="relative flex items-center justify-center mb-6">
+          <svg width="240" height="240" className="transform -rotate-90">
+            {/* Background circle */}
+            <circle
+              cx="120"
+              cy="120"
+              r={radius}
+              stroke="currentColor"
+              strokeWidth="12"
+              fill="none"
+              className="text-gray-200 dark:text-gray-700"
+            />
+            {/* Progress circle */}
+            <circle
+              cx="120"
+              cy="120"
+              r={radius}
+              stroke="currentColor"
+              strokeWidth="12"
+              fill="none"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round"
+              className="text-blue-600 dark:text-blue-400 transition-all duration-1000 ease-linear"
+            />
+          </svg>
+
+          {/* Time display */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-6xl font-bold text-gray-900 dark:text-white">
+              {timeString}
+            </span>
+          </div>
         </div>
 
-        {/* Right: buttons */}
-        {!isDone && (
-          <div className="flex items-center gap-2">
+        {timeRemaining === 0 && (
+          <p className="text-center text-green-600 dark:text-green-400 font-medium mb-4">
+            Done!
+          </p>
+        )}
+
+        {(onPause || onSkip) && (
+          <div className="flex gap-3 mt-2">
             {onPause && (
               <button
                 onClick={onPause}
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="flex-1 py-3 px-4 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
               >
                 {isPaused ? 'Resume' : 'Pause'}
               </button>
@@ -124,7 +145,7 @@ export function RestTimer({
             {onSkip && (
               <button
                 onClick={onSkip}
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="flex-1 py-3 px-4 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
               >
                 Skip
               </button>

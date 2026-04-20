@@ -14,13 +14,13 @@ interface StorageSchema {
   sessions: Session[];
 }
 
-const CURRENT_VERSION = 4; // v4: remove trapbar, rampUp; add trainingMode
+const CURRENT_VERSION = 4; // v4: drop legacy training sessions (ramp-up shape incompatible with 9c protocol)
 
 /**
  * Migrate v1 schema (pre-sessionType) to v2.
  * All existing sessions are assumed to be volume sessions.
  */
-function migrateV1toV2(data: any): any {
+function migrateV1toV2(data: any): StorageSchema {
   console.log('Migrating storage from v1 to v2...');
   return {
     version: 2,
@@ -35,7 +35,7 @@ function migrateV1toV2(data: any): any {
  * Migrate v2 schema to v3.
  * Adds bench and trapbar fields to training sessions.
  */
-function migrateV2toV3(data: any): any {
+function migrateV2toV3(data: any): StorageSchema {
   console.log('Migrating storage from v2 to v3...');
   return {
     version: 3,
@@ -57,50 +57,27 @@ function migrateV2toV3(data: any): any {
 
 /**
  * Migrate v3 schema to v4.
- * Removes trapbar, rampUp data. Adds trainingMode field.
- * Cleans up old setType values ('rampup'/'working' → undefined).
+ *
+ * The 9c-style training protocol replaces the old fixed-weight + ramp-up shape
+ * (hangWeight, pullupWeight, rampUp) with a max-test / working structure. Old
+ * training sessions can't be rendered in the new shape without fabricating a
+ * discoveredMax, so we drop them. Volume sessions are untouched.
  */
 function migrateV3toV4(data: any): StorageSchema {
-  console.log('Migrating storage from v3 to v4...');
+  console.log('Migrating storage from v3 to v4 — dropping legacy training sessions...');
   return {
     version: 4,
-    sessions: data.sessions.map((s: any) => {
-      if (s.sessionType !== 'training') return s;
-
-      const td = s.trainingData;
-
-      // Clean up sets: remove trapbar exercise refs, normalize setTypes
-      const cleanSets = (sets: any[]) =>
-        (sets ?? [])
-          .filter((set: any) => set.exercise !== 'trapbar')
-          .map((set: any) => {
-            const { setType, ...rest } = set;
-            // Convert old rampup/working to undefined for normal sessions
-            return rest;
-          });
-
-      return {
-        ...s,
-        trainingData: {
-          trainingMode: 'normal' as const,
-          hangWeight: td.hangWeight ?? 0,
-          pullupWeight: td.pullupWeight ?? 0,
-          benchWeight: td.benchWeight ?? 10,
-          hangSets: cleanSets(td.hangSets),
-          pullupSets: cleanSets(td.pullupSets),
-          benchSets: cleanSets(td.benchSets),
-          // Deliberately omit: trapBarWeight, trapBarSets, rampUp
-        },
-      };
-    }),
+    sessions: data.sessions.filter((s: any) => s.sessionType !== 'training'),
   };
 }
 
 /**
  * Deserialize session data from localStorage.
  * Converts ISO date strings back to Date objects.
+ * Handles both volume and training sessions.
  */
 function deserializeSession(data: any): Session {
+  // Handle training sessions with special deserialization for sets
   if (data.sessionType === 'training') {
     return {
       ...data,
@@ -121,11 +98,15 @@ function deserializeSession(data: any): Session {
           ...s,
           timestamp: s.timestamp ? new Date(s.timestamp) : undefined,
         })),
+        trapBarSets: (data.trainingData.trapBarSets ?? []).map((s: any) => ({
+          ...s,
+          timestamp: s.timestamp ? new Date(s.timestamp) : undefined,
+        })),
       },
     };
   }
 
-  // Handle volume sessions
+  // Handle volume sessions (existing behavior)
   return {
     ...data,
     date: new Date(data.date),
@@ -149,12 +130,13 @@ export function getAllSessions(): Session[] {
       return [];
     }
 
-    let data: any = JSON.parse(stored);
+    let data: StorageSchema = JSON.parse(stored);
 
     // Handle data migration if needed
     if (!data.version || data.version < CURRENT_VERSION) {
       console.warn('Old data version detected, migrating...');
 
+      // Apply migrations sequentially
       if (!data.version || data.version < 2) {
         data = migrateV1toV2(data);
       }
@@ -164,7 +146,7 @@ export function getAllSessions(): Session[] {
       if (data.version < 4) {
         data = migrateV3toV4(data);
       }
-
+      // Save migrated data immediately
       try {
         localStorage.setItem(SESSIONS_KEY, JSON.stringify(data));
         console.log(`Migration to v${CURRENT_VERSION} complete`);
@@ -176,12 +158,14 @@ export function getAllSessions(): Session[] {
     return data.sessions.map(deserializeSession);
   } catch (error) {
     console.error('Error loading sessions from localStorage:', error);
+    // Return empty array on error (corrupted data)
     return [];
   }
 }
 
 /**
  * Save all sessions to localStorage.
+ * Throws error if quota exceeded or localStorage unavailable.
  */
 function saveAllSessions(sessions: Session[]): void {
   try {
@@ -202,6 +186,7 @@ function saveAllSessions(sessions: Session[]): void {
 
 /**
  * Save a new session.
+ * Adds it to the list and persists to localStorage.
  */
 export function saveSession(session: Session): void {
   const sessions = getAllSessions();
@@ -211,6 +196,7 @@ export function saveSession(session: Session): void {
 
 /**
  * Update an existing session.
+ * Replaces the session with matching ID.
  */
 export function updateSession(updatedSession: Session): void {
   const sessions = getAllSessions();
@@ -240,6 +226,7 @@ export function deleteSession(id: string): void {
 
 /**
  * Get the current active session (if any).
+ * Only one unfinished session should exist at a time.
  */
 export function getCurrentSession(): Session | null {
   const sessions = getAllSessions();
@@ -247,7 +234,26 @@ export function getCurrentSession(): Session | null {
 }
 
 /**
+ * Get the most recent finished session.
+ * Used for calculating recommendations.
+ * @deprecated Use getLastVolumeSession() or getLastTrainingSession() instead
+ */
+export function getLastFinishedSession(): Session | null {
+  const sessions = getAllSessions();
+  const finished = sessions.filter((s) => s.isFinished);
+
+  if (finished.length === 0) {
+    return null;
+  }
+
+  // Sort by date descending and return the first one
+  finished.sort((a, b) => b.date.getTime() - a.date.getTime());
+  return finished[0];
+}
+
+/**
  * Get the most recent finished volume session.
+ * Used for calculating volume session recommendations.
  */
 export function getLastVolumeSession(): VolumeSession | null {
   const sessions = getAllSessions();
@@ -255,14 +261,18 @@ export function getLastVolumeSession(): VolumeSession | null {
     (s): s is VolumeSession => isVolumeSession(s) && s.isFinished
   );
 
-  if (volumeFinished.length === 0) return null;
+  if (volumeFinished.length === 0) {
+    return null;
+  }
 
+  // Sort by date descending and return the first one
   volumeFinished.sort((a, b) => b.date.getTime() - a.date.getTime());
   return volumeFinished[0];
 }
 
 /**
- * Get the most recent finished training session (any mode).
+ * Get the most recent finished training session.
+ * Used for calculating training session recommendations.
  */
 export function getLastTrainingSession(): TrainingSession | null {
   const sessions = getAllSessions();
@@ -270,24 +280,18 @@ export function getLastTrainingSession(): TrainingSession | null {
     (s): s is TrainingSession => isTrainingSession(s) && s.isFinished
   );
 
-  if (trainingFinished.length === 0) return null;
+  if (trainingFinished.length === 0) {
+    return null;
+  }
 
+  // Sort by date descending and return the first one
   trainingFinished.sort((a, b) => b.date.getTime() - a.date.getTime());
   return trainingFinished[0];
 }
 
 /**
- * Get all finished training sessions (for max test history).
- */
-export function getAllTrainingSessions(): TrainingSession[] {
-  const sessions = getAllSessions();
-  return sessions.filter(
-    (s): s is TrainingSession => isTrainingSession(s) && s.isFinished
-  );
-}
-
-/**
  * Get current theme preference.
+ * Defaults to 'dark' if not set.
  */
 export function getTheme(): 'light' | 'dark' {
   const stored = localStorage.getItem(THEME_KEY);
@@ -304,6 +308,7 @@ export function setTheme(theme: 'light' | 'dark'): void {
 
 /**
  * Initialize theme on app load.
+ * Should be called early in app initialization.
  */
 export function initializeTheme(): void {
   const theme = getTheme();
