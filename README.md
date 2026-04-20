@@ -13,7 +13,7 @@ A web application for tracking bouldering sessions with intelligent recommendati
 
 ## Live Demo
 
-Visit the app: [https://lucamac.github.io/Boulder-Body/](https://lucamac.github.io/Boulder-Body/)
+Visit the app: [https://lsailer.github.io/Boulder-Body/](https://lucamac.github.io/Boulder-Body/)
 
 ## How It Works
 
