@@ -481,6 +481,12 @@ export function TrainingSessionView() {
       : `Did you hit 1 rep at ${maxTestPrompt.weight}kg?`
     : '';
 
+  const rampCap = maxTestPrompt && session
+    ? session.trainingData.rampUpCap?.[maxTestPrompt.exercise]
+    : undefined;
+  const isInRampPhase =
+    !!maxTestPrompt && rampCap != null && maxTestPrompt.weight < rampCap;
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
       <div className="max-w-2xl mx-auto">
@@ -568,7 +574,9 @@ export function TrainingSessionView() {
         title="Rest"
       />
 
-      {/* Max-test prompt — shown once rest completes */}
+      {/* Max-test prompt — shown once rest completes. During the warmup ramp
+          (weight < rampUpCap), hide the "No" option: the ramp is warmup, not
+          max-testing, so the only valid answer is "Yes — go heavier". */}
       <ConfirmDialog
         isOpen={!!maxTestPrompt && !showRestTimer}
         title={maxTestPrompt?.exercise === 'hang' ? 'Hold it?' : 'Hit 1 rep?'}
@@ -577,6 +585,8 @@ export function TrainingSessionView() {
         cancelText="No — that's my max"
         onConfirm={handleMaxTestYes}
         onCancel={handleMaxTestNo}
+        hideCancel={isInRampPhase}
+        closeOnBackdrop={!isInRampPhase}
       />
 
       <ConfirmDialog
