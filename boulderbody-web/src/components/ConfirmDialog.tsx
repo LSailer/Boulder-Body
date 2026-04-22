@@ -30,6 +30,9 @@ interface ConfirmDialogProps {
 
   /** Whether clicking the backdrop closes the dialog (default: true) */
   closeOnBackdrop?: boolean;
+
+  /** Hide the cancel button — use when the dialog has no valid "no" answer */
+  hideCancel?: boolean;
 }
 
 export function ConfirmDialog({
@@ -42,6 +45,7 @@ export function ConfirmDialog({
   onCancel,
   variant = 'default',
   closeOnBackdrop = true,
+  hideCancel = false,
 }: ConfirmDialogProps) {
   if (!isOpen) {
     return null;
@@ -66,9 +70,11 @@ export function ConfirmDialog({
         </h3>
         <p className="text-gray-600 dark:text-gray-300 mb-6">{message}</p>
         <div className="flex gap-3 justify-end">
-          <button onClick={onCancel} className="btn btn-secondary">
-            {cancelText}
-          </button>
+          {!hideCancel && (
+            <button onClick={onCancel} className="btn btn-secondary">
+              {cancelText}
+            </button>
+          )}
           <button onClick={onConfirm} className={confirmButtonClass}>
             {confirmText}
           </button>

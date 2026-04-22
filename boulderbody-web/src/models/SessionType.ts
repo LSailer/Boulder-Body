@@ -48,6 +48,16 @@ export interface TrainingData {
     hang?: number;
     pullup?: number;
   };
+  /**
+   * Last session's working weight per exercise — the threshold at which
+   * ramp-up steps (+5kg) flip to max-test steps (+2.5kg). Seeded from the
+   * recommender when the session starts; undefined means no ramp-up (first
+   * session or no prior working sets recorded).
+   */
+  rampUpCap?: {
+    hang?: number;
+    pullup?: number;
+  };
 }
 
 /**

@@ -27,11 +27,12 @@ import {
   getLastTrainingSession,
 } from '../logic/StorageManager';
 import { getTrainingRecommendation } from '../logic/TrainingRecommender';
-import { generateWorkingSets } from '../logic/weights';
+import { generateWorkingSets, workingWeightFromFailed } from '../logic/weights';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { RestTimer } from '../components/RestTimer';
 
-const WEIGHT_INCREMENT = 2.5;
+const PLATE_INCREMENT = 2.5;
+const RAMP_UP_INCREMENT = 5;
 
 type ExerciseKey = 'hang' | 'pullup' | 'bench' | 'trapbar';
 type MaxTestExercise = 'hang' | 'pullup';
@@ -131,6 +132,10 @@ export function TrainingSessionView() {
                   },
                 ]
               : found.trainingData.pullupSets,
+          rampUpCap: {
+            hang: rec.lastWorking?.hang,
+            pullup: rec.lastWorking?.pullup,
+          },
         },
       };
       updateSession(seeded);
@@ -255,7 +260,11 @@ export function TrainingSessionView() {
   const handleMaxTestYes = () => {
     if (!maxTestPrompt || !session) return;
     const { exercise, weight } = maxTestPrompt;
-    const nextWeight = weight + WEIGHT_INCREMENT;
+    // Ramp up in 5kg steps until we reach last session's working weight,
+    // then switch to the normal 2.5kg max-test step.
+    const cap = session.trainingData.rampUpCap?.[exercise];
+    const increment = cap != null && weight < cap ? RAMP_UP_INCREMENT : PLATE_INCREMENT;
+    const nextWeight = weight + increment;
     const sets = getSets(exercise);
     const newSet: TrainingSet = {
       id: crypto.randomUUID(),
@@ -278,12 +287,13 @@ export function TrainingSessionView() {
   const handleMaxTestNo = () => {
     if (!maxTestPrompt || !session) return;
     const { exercise, weight } = maxTestPrompt;
-    // Last successful weight = current - 2.5 (bounded at 0). Works both for
-    // normal fail (user held previous weight) and first-rep fail (approximate).
-    const max = Math.max(0, weight - WEIGHT_INCREMENT);
+    // Record the last successfully held weight (approx: failed − 2.5) as the
+    // session's discovered max, but today's working weight = failed − 5.
+    const max = Math.max(0, weight - PLATE_INCREMENT);
+    const workingWeight = workingWeightFromFailed(weight);
 
     const sets = getSets(exercise);
-    const workingSets = generateWorkingSets(max, exercise, sets.length + 1);
+    const workingSets = generateWorkingSets(workingWeight, exercise, sets.length + 1);
     const updatedSets = [...sets, ...workingSets];
     const key = getSetsKey(exercise);
 
@@ -471,6 +481,12 @@ export function TrainingSessionView() {
       : `Did you hit 1 rep at ${maxTestPrompt.weight}kg?`
     : '';
 
+  const rampCap = maxTestPrompt && session
+    ? session.trainingData.rampUpCap?.[maxTestPrompt.exercise]
+    : undefined;
+  const isInRampPhase =
+    !!maxTestPrompt && rampCap != null && maxTestPrompt.weight < rampCap;
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
       <div className="max-w-2xl mx-auto">
@@ -558,7 +574,9 @@ export function TrainingSessionView() {
         title="Rest"
       />
 
-      {/* Max-test prompt — shown once rest completes */}
+      {/* Max-test prompt — shown once rest completes. During the warmup ramp
+          (weight < rampUpCap), hide the "No" option: the ramp is warmup, not
+          max-testing, so the only valid answer is "Yes — go heavier". */}
       <ConfirmDialog
         isOpen={!!maxTestPrompt && !showRestTimer}
         title={maxTestPrompt?.exercise === 'hang' ? 'Hold it?' : 'Hit 1 rep?'}
@@ -567,6 +585,8 @@ export function TrainingSessionView() {
         cancelText="No — that's my max"
         onConfirm={handleMaxTestYes}
         onCancel={handleMaxTestNo}
+        hideCancel={isInRampPhase}
+        closeOnBackdrop={!isInRampPhase}
       />
 
       <ConfirmDialog
