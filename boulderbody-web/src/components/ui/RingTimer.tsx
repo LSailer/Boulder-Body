@@ -4,7 +4,11 @@
  * Conic-gradient countdown timer with three visual states (prep/hold/rest).
  * Used by the training session for prep → hang → rest cycles.
  *
- * Supports optional pause and skip. Replaces the older RestTimer.
+ * Timing is deadline-based: we record an absolute end time when the timer
+ * opens (or resumes after pause) and derive the displayed remaining seconds
+ * from Date.now() on each tick. setInterval drift and React render lag
+ * therefore can't make a 5-second hang feel like 6 — the worst case is a
+ * slightly stale frame, never an accumulated stretch.
  */
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
@@ -35,6 +39,8 @@ const stateTone: Record<RingState, string> = {
   rest: 'text-moss',
 };
 
+const TICK_MS = 100;
+
 export function RingTimer({
   isOpen,
   duration,
@@ -46,50 +52,76 @@ export function RingTimer({
   title,
   subtitle,
 }: Props) {
-  // Reset key — when isOpen or duration changes, we want a fresh countdown.
-  // Derived from a useRef so we avoid a setState inside the effect.
-  const resetKey = `${isOpen}-${duration}`;
-  const lastKeyRef = useRef(resetKey);
-  const [timeRemaining, setTimeRemaining] = useState(duration);
+  const [remainingMs, setRemainingMs] = useState(duration * 1000);
+  const deadlineRef = useRef<number | null>(null);
+  const pausedRemainingRef = useRef<number | null>(null);
   const completedRef = useRef(false);
 
-  if (lastKeyRef.current !== resetKey) {
-    lastKeyRef.current = resetKey;
+  // Reset when the timer is (re)opened or duration changes.
+  const openKey = `${isOpen}-${duration}`;
+  const lastKeyRef = useRef(openKey);
+  if (lastKeyRef.current !== openKey) {
+    lastKeyRef.current = openKey;
     completedRef.current = false;
-    // Safe during render: this matches useState lazy-init semantics by
-    // snapping the next value synchronously before the subsequent effect.
-    setTimeRemaining(duration);
+    deadlineRef.current = null;
+    pausedRemainingRef.current = null;
+    setRemainingMs(duration * 1000);
   }
 
   useEffect(() => {
     if (!isOpen) return;
-    if (isPaused) return;
 
-    const interval = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          if (!completedRef.current) {
-            completedRef.current = true;
-            setTimeout(onComplete, 400);
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isOpen, onComplete, isPaused]);
+    if (isPaused) {
+      // Freeze: capture remaining from deadline, drop the interval.
+      if (deadlineRef.current != null) {
+        pausedRemainingRef.current = Math.max(
+          0,
+          deadlineRef.current - Date.now()
+        );
+        deadlineRef.current = null;
+      }
+      return;
+    }
+
+    // (Re)start: seed deadline from paused snapshot if resuming, else from duration.
+    if (deadlineRef.current == null) {
+      const baseRemaining =
+        pausedRemainingRef.current != null
+          ? pausedRemainingRef.current
+          : duration * 1000;
+      deadlineRef.current = Date.now() + baseRemaining;
+      pausedRemainingRef.current = null;
+      setRemainingMs(baseRemaining);
+    }
+
+    const tick = () => {
+      const deadline = deadlineRef.current;
+      if (deadline == null) return;
+      const left = Math.max(0, deadline - Date.now());
+      setRemainingMs(left);
+      if (left <= 0 && !completedRef.current) {
+        completedRef.current = true;
+        onComplete();
+      }
+    };
+
+    tick(); // immediate render so the first second isn't "frozen"
+    const id = setInterval(tick, TICK_MS);
+    return () => clearInterval(id);
+  }, [isOpen, duration, onComplete, isPaused]);
 
   if (!isOpen) return null;
 
-  const progress = Math.max(0, Math.min(1, (duration - timeRemaining) / duration));
+  const totalMs = duration * 1000;
+  const progress = Math.max(0, Math.min(1, (totalMs - remainingMs) / totalMs));
   const percent = `${(progress * 100).toFixed(1)}%`;
 
-  const m = Math.floor(timeRemaining / 60);
-  const s = timeRemaining % 60;
+  // Ceil so a 5s timer opens displaying "5", not "4".
+  const remainingSec = Math.ceil(remainingMs / 1000);
+  const m = Math.floor(remainingSec / 60);
+  const s = remainingSec % 60;
   const display =
-    duration >= 60 ? `${m}:${s.toString().padStart(2, '0')}` : String(timeRemaining);
+    duration >= 60 ? `${m}:${s.toString().padStart(2, '0')}` : String(remainingSec);
 
   const ringStyle: CSSProperties = { ['--ring-progress' as never]: percent };
 
@@ -103,7 +135,7 @@ export function RingTimer({
         </div>
         <div className="relative w-48 h-48 mx-auto my-5">
           <div
-            className={`absolute inset-0 rounded-full ${stateClass[state]} transition-[background] duration-700 ease-linear`}
+            className={`absolute inset-0 rounded-full ${stateClass[state]}`}
             style={ringStyle}
           />
           <div className="absolute inset-[10px] rounded-full paper-tex border border-line flex items-center justify-center">
