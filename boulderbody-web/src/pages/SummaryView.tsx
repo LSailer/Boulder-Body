@@ -1,23 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts';
-import type { Session, TrainingSession } from '../models/Session';
+import type { Session, TrainingSession, VolumeSession } from '../models/Session';
 import {
   isVolumeSession,
   isTrainingSession,
   getAttemptCounts,
   getSessionDuration,
-  getFailRate,
 } from '../models/Session';
-import { getAllSessions, deleteSession } from '../logic/StorageManager';
+import {
+  getAllSessions,
+  deleteSession,
+  getBadges,
+} from '../logic/StorageManager';
 import { getTrainingRecommendation } from '../logic/TrainingRecommender';
-import { isExerciseComplete } from '../models/SessionType';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { StampLabel } from '../components/ui/StampLabel';
+import { LevelUpBanner } from '../components/ui/LevelUpBanner';
+import { AchievementCard } from '../components/ui/AchievementCard';
+import {
+  computeSessionXP,
+  computeTotalXP,
+  computeLevel,
+} from '../logic/XPCalculator';
 
-/**
- * Summary View - Post-session statistics and charts.
- * Shows different summaries for volume vs training sessions.
+/*
+ * Summary view — redesigned. Shows either a volume donut summary or a training
+ * max/working-set summary, plus any badges that were unlocked by this session,
+ * and an XP-earned banner. Bench/trap-bar only render if the session actually
+ * has sets for them (legacy sessions).
  */
+
 export function SummaryView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
@@ -30,19 +42,14 @@ export function SummaryView() {
       navigate('/');
       return;
     }
-
     const allSessions = getAllSessions();
     const found = allSessions.find((s) => s.id === sessionId);
-
     if (!found) {
       navigate('/');
       return;
     }
-
     setSession(found);
 
-    // For training sessions, find the most recent finished training session
-    // that is NOT the current session — used for delta-from-last computation.
     if (isTrainingSession(found)) {
       const priorTraining = allSessions
         .filter(
@@ -54,253 +61,115 @@ export function SummaryView() {
     }
   }, [sessionId, navigate]);
 
-  if (!session) {
-    return null; // Loading state
-  }
+  const xpThisSession = useMemo(
+    () => (session ? computeSessionXP(session) : 0),
+    [session]
+  );
+  const levelInfo = useMemo(() => {
+    if (!session) return null;
+    const all = getAllSessions();
+    return computeLevel(computeTotalXP(all));
+    // `session` isn't strictly referenced inside, but we want to recompute
+    // once the session has loaded so the banner shows correct XP-to-next.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+  const unlockedThisSession = useMemo(() => {
+    if (!session) return [];
+    return getBadges().filter((b) => b.sessionId === session.id);
+  }, [session]);
+
+  if (!session) return null;
 
   const duration = getSessionDuration(session);
+  const dateStamp = session.date
+    .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+    .replace(',', ' ·');
 
   const handleDelete = () => {
     deleteSession(session.id);
     navigate('/');
   };
 
-  const dateStr = session.date.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
-  // Prepare volume session data if applicable
-  let volumeChartData: any[] = [];
-  let volumeCounts: any = null;
-  let volumeFailRate = 0;
-
-  if (isVolumeSession(session)) {
-    volumeCounts = getAttemptCounts(session);
-    volumeFailRate = getFailRate(session);
-    volumeChartData = [
-      { name: 'Flash', value: volumeCounts.flash, color: '#22c55e' },
-      { name: 'Done', value: volumeCounts.done, color: '#3b82f6' },
-      { name: 'Fail', value: volumeCounts.fail, color: '#ef4444' },
-      { name: 'Unlogged', value: volumeCounts.unlogged, color: '#9ca3af' },
-    ].filter((item) => item.value > 0);
-  }
-
-  // Prepare training session "next recommendation" — based on the *current* session,
-  // since it's the most recent finished training session at this point.
-  let trainingRec = null;
-  if (isTrainingSession(session)) {
-    trainingRec = getTrainingRecommendation(session);
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen">
+      <div className="max-w-[420px] mx-auto px-5 pt-5 pb-24">
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center justify-between mb-4">
           <button
+            type="button"
             onClick={() => navigate('/')}
-            className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            className="w-10 h-10 rounded-full border border-line bg-paper/60 flex items-center justify-center text-ink hover:bg-chalk dark:bg-basalt/60 dark:text-paper"
+            aria-label="Home"
           >
-            ← Home
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
           </button>
+          <StampLabel>Session report</StampLabel>
           <button
+            type="button"
             onClick={() => setShowDeleteConfirm(true)}
-            className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-medium"
+            className="w-10 h-10 rounded-full border border-line bg-paper/60 flex items-center justify-center text-graphite hover:text-rust dark:bg-basalt/60"
+            aria-label="Delete session"
           >
-            Delete Session
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            </svg>
           </button>
         </div>
 
-        {/* Volume Session Summary */}
+        {/* XP banner */}
+        {levelInfo && (
+          <div className="mb-5">
+            <LevelUpBanner
+              xpEarned={xpThisSession}
+              xpToNext={levelInfo.xpToNext}
+              nextLevel={levelInfo.level + 1}
+            />
+          </div>
+        )}
+
         {isVolumeSession(session) && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-6">
-            <h1 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white text-center">
-              Level {session.targetLevel}
-            </h1>
-            <p className="text-center text-gray-500 dark:text-gray-400 mb-6">
-              {dateStr}
-            </p>
-
-            {/* Key metrics */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="text-center">
-                <p className="text-gray-500 dark:text-gray-400 text-sm">
-                  Duration
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {duration}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-gray-500 dark:text-gray-400 text-sm">
-                  Fail Rate
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {volumeFailRate.toFixed(0)}%
-                </p>
-              </div>
-            </div>
-
-            {/* Chart */}
-            {volumeChartData.length > 0 ? (
-              <div className="h-64 mb-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={volumeChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="value"
-                      label={({ name, value }) => `${name}: ${value}`}
-                    >
-                      {volumeChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                No attempts logged
-              </div>
-            )}
-
-            {/* Detailed breakdown */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                <span className="text-green-800 dark:text-green-200 font-medium">
-                  Flash
-                </span>
-                <span className="text-green-900 dark:text-green-100 font-bold">
-                  {volumeCounts!.flash}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <span className="text-blue-800 dark:text-blue-200 font-medium">
-                  Done
-                </span>
-                <span className="text-blue-900 dark:text-blue-100 font-bold">
-                  {volumeCounts!.done}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                <span className="text-red-800 dark:text-red-200 font-medium">
-                  Fail
-                </span>
-                <span className="text-red-900 dark:text-red-100 font-bold">
-                  {volumeCounts!.fail}
-                </span>
-              </div>
-              {volumeCounts!.unlogged > 0 && (
-                <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <span className="text-gray-800 dark:text-gray-200 font-medium">
-                    Unlogged (counted as fails)
-                  </span>
-                  <span className="text-gray-900 dark:text-gray-100 font-bold">
-                    {volumeCounts!.unlogged}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
+          <VolumeSummary session={session} dateStamp={dateStamp} duration={duration} />
         )}
 
-        {/* Training Session Summary */}
         {isTrainingSession(session) && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-6">
-            <h1 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white text-center">
-              Training Session
-            </h1>
-            <p className="text-center text-gray-500 dark:text-gray-400 mb-6">
-              {dateStr}
-            </p>
+          <TrainingSummary
+            session={session}
+            prevSession={prevTraining}
+            dateStamp={dateStamp}
+            duration={duration}
+          />
+        )}
 
-            {/* Duration */}
-            <div className="text-center mb-6">
-              <p className="text-gray-500 dark:text-gray-400 text-sm">
-                Duration
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {duration}
-              </p>
-            </div>
-
-            <TrainingSummary session={session} prevSession={prevTraining} />
-
-            {/* All sets completion message */}
-            {isExerciseComplete(session.trainingData.hangSets) &&
-              isExerciseComplete(session.trainingData.pullupSets) &&
-              isExerciseComplete(session.trainingData.benchSets) &&
-              isExerciseComplete(session.trainingData.trapBarSets) && (
-              <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg mb-6 text-center">
-                <span className="text-green-800 dark:text-green-200 font-medium">
-                  All sets completed!
-                </span>
-              </div>
-            )}
-
-            {/* Next recommendation */}
-            {trainingRec && (
-              <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <h3 className="font-bold text-gray-900 dark:text-white mb-2">
-                  Next Recommendation:
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-                  {trainingRec.reason}
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-gray-500 dark:text-gray-400">Hangs:</span>{' '}
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {trainingRec.hangStart}kg
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 dark:text-gray-400">Pull-ups:</span>{' '}
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {trainingRec.pullupStart}kg
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 dark:text-gray-400">Bench:</span>{' '}
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {trainingRec.benchWeight}kg
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 dark:text-gray-400">Trap Bar:</span>{' '}
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {trainingRec.trapBarWeight}kg
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
+        {unlockedThisSession.length > 0 && (
+          <div className="space-y-2 mb-5">
+            {unlockedThisSession.map((b) => (
+              <AchievementCard key={`${b.id}-${b.sessionId}`} badge={b} />
+            ))}
           </div>
         )}
 
-        {/* Actions */}
-        <button
-          onClick={() => navigate('/')}
-          className="w-full btn btn-primary text-lg py-3"
-        >
-          Start New Session
-        </button>
+        {isVolumeSession(session) && <VolumeNotes session={session} />}
+        {isTrainingSession(session) && <TrainingNotes session={session} />}
+
+        {/* CTAs */}
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="w-full py-4 rounded-xl bg-rust hover:bg-rustdark text-paper font-semibold tracking-wide shadow-pebble transition-colors"
+          >
+            Start new session →
+          </button>
+        </div>
       </div>
 
-      {/* Delete confirmation */}
       <ConfirmDialog
         isOpen={showDeleteConfirm}
-        title="Delete Session"
-        message={`Delete session from ${dateStr}? This cannot be undone.`}
+        title="Delete session"
+        message={`Delete session from ${dateStamp}? This cannot be undone.`}
         confirmText="Delete"
         variant="danger"
         onConfirm={handleDelete}
@@ -310,144 +179,428 @@ export function SummaryView() {
   );
 }
 
-/**
- * Formatted delta tag next to a discovered max.
- * null delta → nothing rendered.
+/*
+ * ────────────────────────────────────────────────────────────────────────────
+ * Volume summary
+ * ────────────────────────────────────────────────────────────────────────────
  */
-function DeltaTag({ delta }: { delta: number | null }) {
-  if (delta === null) return null;
-  if (delta === 0) {
-    return (
-      <span className="ml-2 text-sm font-medium text-gray-500 dark:text-gray-400">
-        (same as last)
-      </span>
-    );
-  }
-  if (delta > 0) {
-    return (
-      <span className="ml-2 text-sm font-medium text-green-600 dark:text-green-400">
-        (+{delta}kg from last)
-      </span>
-    );
-  }
+
+function VolumeSummary({
+  session,
+  dateStamp,
+  duration,
+}: {
+  session: VolumeSession;
+  dateStamp: string;
+  duration: string;
+}) {
+  const counts = getAttemptCounts(session);
+  const total = session.boulderCount;
+  const sends = counts.flash;
+  const tops = counts.done;
+  const projects = counts.fail + counts.unlogged;
+  const successCount = sends + tops;
+  const successPct = total > 0 ? Math.round((successCount / total) * 100) : 0;
+
+  // Conic-gradient percentages — rounded to 0.1%, stacked.
+  const pctSends = total > 0 ? (sends / total) * 100 : 0;
+  const pctTops = total > 0 ? (tops / total) * 100 : 0;
+  const donutStyle = {
+    background: `conic-gradient(
+      #e8a93c 0 ${pctSends}%,
+      #4a5d3a ${pctSends}% ${pctSends + pctTops}%,
+      #6b6b6b ${pctSends + pctTops}% 100%
+    )`,
+  } as const;
+
+  const bestFlashStreak = longestFlashStreak(session);
+  const avgMsPerLogged = avgMillisPerLogged(session);
+
   return (
-    <span className="ml-2 text-sm font-medium text-red-600 dark:text-red-400">
-      ({delta}kg from last)
-    </span>
+    <>
+      <div className="mb-4 p-5 rounded-2xl bg-paper border border-line paper-tex">
+        <div className="flex items-center justify-between mb-1">
+          <StampLabel>{dateStamp}</StampLabel>
+          <span className="text-[11px] text-graphite">{duration}</span>
+        </div>
+        <div className="font-display text-[22px] leading-tight mb-4">
+          V{session.targetLevel} · {session.boulderCount} boulders
+        </div>
+
+        <div className="flex items-center gap-5">
+          <div className="relative w-36 h-36 shrink-0">
+            <div className="w-full h-full rounded-full" style={donutStyle} />
+            <div className="absolute inset-[14px] paper-tex rounded-full flex flex-col items-center justify-center border border-line">
+              <div className="font-display text-3xl leading-none">{successPct}%</div>
+              <div className="stamp mt-1">Success</div>
+            </div>
+          </div>
+          <div className="flex-1 space-y-3">
+            <LegendRow dotClass="bg-gold" label="Sends" value={sends} />
+            <LegendRow dotClass="bg-moss" label="Tops" value={tops} />
+            <LegendRow dotClass="bg-graphite" label="Projects" value={projects} />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <MetaCard label="Best streak" value={`${bestFlashStreak} flashes`} />
+        <MetaCard
+          label="Avg per boulder"
+          value={avgMsPerLogged != null ? formatMs(avgMsPerLogged) : '—'}
+        />
+      </div>
+    </>
   );
 }
 
-/**
- * Training summary — max per exercise (+delta) and working-set completion.
+function LegendRow({
+  dotClass,
+  label,
+  value,
+}: {
+  dotClass: string;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className={`w-2.5 h-2.5 rounded-full ${dotClass}`} />
+        <StampLabel>{label}</StampLabel>
+      </div>
+      <div className="font-display text-2xl leading-none">{value}</div>
+    </div>
+  );
+}
+
+function MetaCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="p-4 rounded-2xl border border-line paper-tex">
+      <StampLabel className="mb-1 block">{label}</StampLabel>
+      <div className="font-display text-xl">{value}</div>
+    </div>
+  );
+}
+
+function VolumeNotes({ session }: { session: VolumeSession }) {
+  const withComments = session.attempts.filter((a) => a.comment && a.comment.trim());
+  if (withComments.length === 0) return null;
+  return (
+    <>
+      <hr className="zine-rule my-5" />
+      <div className="mb-5">
+        <StampLabel className="mb-2 block">Notes from the wall</StampLabel>
+        <div className="space-y-2">
+          {withComments.map((a) => (
+            <div
+              key={a.id}
+              className="p-3 rounded-xl bg-chalk border border-line dark:bg-basalt/40"
+            >
+              <div className="text-xs text-graphite mb-0.5">
+                Boulder {String(a.order).padStart(2, '0')} ·{' '}
+                {a.result === 'flash' ? 'Send' : a.result === 'done' ? 'Top' : 'Project'}
+              </div>
+              <div className="text-sm">{a.comment}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function longestFlashStreak(session: VolumeSession): number {
+  let best = 0;
+  let run = 0;
+  for (const a of session.attempts) {
+    if (a.result === 'flash') {
+      run += 1;
+      if (run > best) best = run;
+    } else {
+      run = 0;
+    }
+  }
+  return best;
+}
+
+function avgMillisPerLogged(session: VolumeSession): number | null {
+  if (!session.endTime) return null;
+  const logged = session.attempts.filter((a) => a.result !== undefined).length;
+  if (logged === 0) return null;
+  const span = session.endTime.getTime() - session.startTime.getTime();
+  return span / logged;
+}
+
+function formatMs(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/*
+ * ────────────────────────────────────────────────────────────────────────────
+ * Training summary
+ * ────────────────────────────────────────────────────────────────────────────
  */
+
 function TrainingSummary({
   session,
   prevSession,
+  dateStamp,
+  duration,
 }: {
   session: TrainingSession;
   prevSession: TrainingSession | null;
+  dateStamp: string;
+  duration: string;
 }) {
   const { trainingData } = session;
+  const currHang = trainingData.discoveredMax?.hang;
+  const prevHang = prevSession?.trainingData.discoveredMax?.hang;
+  const deltaHang = currHang != null && prevHang != null ? currHang - prevHang : null;
 
-  const currMaxHang = trainingData.discoveredMax?.hang;
-  const prevMaxHang = prevSession?.trainingData.discoveredMax?.hang;
-  const deltaHang =
-    prevMaxHang != null && currMaxHang != null ? currMaxHang - prevMaxHang : null;
+  const currPull = trainingData.discoveredMax?.pullup;
+  const prevPull = prevSession?.trainingData.discoveredMax?.pullup;
+  const deltaPull = currPull != null && prevPull != null ? currPull - prevPull : null;
 
-  const currMaxPullup = trainingData.discoveredMax?.pullup;
-  const prevMaxPullup = prevSession?.trainingData.discoveredMax?.pullup;
-  const deltaPullup =
-    prevMaxPullup != null && currMaxPullup != null
-      ? currMaxPullup - prevMaxPullup
-      : null;
+  const hangWorking = trainingData.hangSets.filter((s) => s.setType === 'working');
+  const hangWorkingCompleted = hangWorking.filter((s) => s.completed).length;
+  const hangWorkingWeight = hangWorking[0]?.weight;
 
-  const hangWorkingSets = trainingData.hangSets.filter((s) => s.setType === 'working');
-  const hangWorkingCompleted = hangWorkingSets.filter((s) => s.completed).length;
-  const hangWorkingWeight = hangWorkingSets[0]?.weight;
-
-  const pullupWorkingSets = trainingData.pullupSets.filter((s) => s.setType === 'working');
-  const pullupWorkingCompleted = pullupWorkingSets.filter((s) => s.completed).length;
-  const pullupWorkingWeight = pullupWorkingSets[0]?.weight;
+  const pullWorking = trainingData.pullupSets.filter((s) => s.setType === 'working');
+  const pullWorkingCompleted = pullWorking.filter((s) => s.completed).length;
+  const pullWorkingWeight = pullWorking[0]?.weight;
 
   const benchSets = trainingData.benchSets ?? [];
-  const benchCompleted = benchSets.filter((s) => s.completed).length;
-
   const trapBarSets = trainingData.trapBarSets ?? [];
-  const trapBarCompleted = trapBarSets.filter((s) => s.completed).length;
+  const nextRec = getTrainingRecommendation(session);
 
   return (
-    <div className="space-y-4 mb-6">
-      {/* Hang */}
-      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-        <div className="flex flex-wrap items-baseline justify-between mb-2">
-          <span className="text-blue-800 dark:text-blue-200 font-medium">Max Hang</span>
-          <span className="text-blue-900 dark:text-blue-100 font-bold">
-            {currMaxHang != null ? `${currMaxHang}kg` : '—'}
-            <DeltaTag delta={deltaHang} />
-          </span>
-        </div>
-        {hangWorkingSets.length > 0 && (
-          <div className="text-sm text-blue-600 dark:text-blue-300">
-            {hangWorkingCompleted}/{hangWorkingSets.length} working hangs
-            {hangWorkingWeight != null ? ` at ${hangWorkingWeight}kg` : ''}
-            {hangWorkingCompleted === hangWorkingSets.length ? ' ✓' : ''}
-          </div>
-        )}
+    <>
+      <div className="mb-3 flex items-center justify-between">
+        <StampLabel>{dateStamp}</StampLabel>
+        <span className="text-[11px] text-graphite">{duration}</span>
       </div>
 
-      {/* Pull-up */}
-      <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-        <div className="flex flex-wrap items-baseline justify-between mb-2">
-          <span className="text-purple-800 dark:text-purple-200 font-medium">
-            Max Pull-up
-          </span>
-          <span className="text-purple-900 dark:text-purple-100 font-bold">
-            {currMaxPullup != null ? `${currMaxPullup}kg` : '—'}
-            <DeltaTag delta={deltaPullup} />
-          </span>
-        </div>
-        {pullupWorkingSets.length > 0 && (
-          <div className="text-sm text-purple-600 dark:text-purple-300">
-            {pullupWorkingCompleted}/{pullupWorkingSets.length} working pull-ups
-            {pullupWorkingWeight != null ? ` at ${pullupWorkingWeight}kg` : ''}
-            {pullupWorkingCompleted === pullupWorkingSets.length ? ' ✓' : ''}
-          </div>
-        )}
+      <div className="mb-3 grid grid-cols-2 gap-3">
+        <MaxCard
+          tone="gold"
+          label="Max hang"
+          value={currHang}
+          delta={deltaHang}
+          prevValue={prevHang}
+        />
+        <MaxCard
+          tone="rust"
+          label="Max pull-up"
+          value={currPull}
+          delta={deltaPull}
+          prevValue={prevPull}
+        />
       </div>
 
-      {/* Bench */}
-      {benchSets.length > 0 && (
-        <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-green-800 dark:text-green-200 font-medium">
-              Bench Press
-            </span>
-            <span className="text-green-900 dark:text-green-100 font-bold">
-              {trainingData.benchWeight ?? 10}kg
-            </span>
-          </div>
-          <div className="text-sm text-green-600 dark:text-green-300">
-            {benchCompleted}/{benchSets.length} sets completed
+      <div className="mb-3 p-4 rounded-2xl border border-line paper-tex">
+        <StampLabel className="mb-3 block">Working sets</StampLabel>
+        <div className="space-y-2 text-sm">
+          {hangWorking.length > 0 && (
+            <WorkingRow
+              tone="gold"
+              label="Hang"
+              weight={hangWorkingWeight}
+              completed={hangWorkingCompleted}
+              total={hangWorking.length}
+            />
+          )}
+          {pullWorking.length > 0 && (
+            <WorkingRow
+              tone="rust"
+              label="Pull-up"
+              weight={pullWorkingWeight}
+              completed={pullWorkingCompleted}
+              total={pullWorking.length}
+            />
+          )}
+          {hangWorking.length === 0 && pullWorking.length === 0 && (
+            <div className="text-xs text-graphite">No working sets recorded.</div>
+          )}
+        </div>
+      </div>
+
+      {(benchSets.length > 0 || trapBarSets.length > 0) && (
+        <div className="mb-3 p-4 rounded-2xl border border-line paper-tex">
+          <StampLabel className="mb-3 block">Accessories (legacy)</StampLabel>
+          <div className="space-y-2 text-sm">
+            {benchSets.length > 0 && (
+              <WorkingRow
+                tone="gold"
+                label="Bench"
+                weight={trainingData.benchWeight}
+                completed={benchSets.filter((s) => s.completed).length}
+                total={benchSets.length}
+              />
+            )}
+            {trapBarSets.length > 0 && (
+              <WorkingRow
+                tone="rust"
+                label="Trap bar"
+                weight={trainingData.trapBarWeight}
+                completed={trapBarSets.filter((s) => s.completed).length}
+                total={trapBarSets.length}
+              />
+            )}
           </div>
         </div>
       )}
 
-      {/* Trap bar */}
-      {trapBarSets.length > 0 && (
-        <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-orange-800 dark:text-orange-200 font-medium">
-              Trap Bar Deadlift
-            </span>
-            <span className="text-orange-900 dark:text-orange-100 font-bold">
-              {trainingData.trapBarWeight ?? 20}kg
-            </span>
-          </div>
-          <div className="text-sm text-orange-600 dark:text-orange-300">
-            {trapBarCompleted}/{trapBarSets.length} sets completed
+      <hr className="zine-rule my-4" />
+      <div className="mb-5">
+        <StampLabel className="mb-2 block">Next training — we suggest</StampLabel>
+        <div className="p-4 rounded-2xl bg-chalk border border-line dark:bg-basalt/40">
+          <div className="grid grid-cols-2 gap-y-2 text-sm">
+            <div className="text-graphite">Hang start</div>
+            <div className="font-mono font-semibold text-right">
+              {formatKg(nextRec.hangStart)}
+            </div>
+            <div className="text-graphite">Pull-up start</div>
+            <div className="font-mono font-semibold text-right">
+              {formatKg(nextRec.pullupStart)}
+            </div>
           </div>
         </div>
-      )}
+      </div>
+    </>
+  );
+}
+
+function TrainingNotes({ session }: { session: TrainingSession }) {
+  const allSets = [
+    ...session.trainingData.hangSets,
+    ...session.trainingData.pullupSets,
+  ];
+  const withNotes = allSets.filter((s) => s.notes && s.notes.trim());
+  if (withNotes.length === 0) return null;
+  return (
+    <>
+      <hr className="zine-rule my-4" />
+      <div className="mb-5">
+        <StampLabel className="mb-2 block">Notes from the rig</StampLabel>
+        <div className="space-y-2">
+          {withNotes.map((s) => (
+            <div
+              key={s.id}
+              className="p-3 rounded-xl bg-chalk border border-line dark:bg-basalt/40"
+            >
+              <div className="text-xs text-graphite mb-0.5">
+                {s.exercise === 'hang' ? 'Hang' : 'Pull-up'} · {formatKg(s.weight ?? 0)}
+              </div>
+              <div className="text-sm">{s.notes}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function MaxCard({
+  tone,
+  label,
+  value,
+  delta,
+  prevValue,
+}: {
+  tone: 'gold' | 'rust';
+  label: string;
+  value?: number;
+  delta: number | null;
+  prevValue?: number;
+}) {
+  const styleClass =
+    tone === 'gold' ? 'border-gold/40 bg-gold/10' : 'border-rust/40 bg-rust/10';
+  const stampTone: 'gold' | 'rust' = tone;
+  const deltaEl = () => {
+    if (value == null) {
+      return (
+        <span className="text-[11px] text-graphite font-semibold">not tested</span>
+      );
+    }
+    if (delta === null) {
+      return (
+        <span className="text-[11px] text-graphite font-semibold">— no prior</span>
+      );
+    }
+    if (delta > 0) {
+      return (
+        <span className="text-[11px] text-moss font-semibold">
+          ↑ +{formatNum(delta)} vs {formatNum(prevValue!)}
+        </span>
+      );
+    }
+    if (delta < 0) {
+      return (
+        <span className="text-[11px] text-rust font-semibold">
+          ↓ {formatNum(delta)} vs {formatNum(prevValue!)}
+        </span>
+      );
+    }
+    return (
+      <span className="text-[11px] text-graphite font-semibold">
+        → same as last
+      </span>
+    );
+  };
+  return (
+    <div className={`p-4 rounded-2xl border-2 ${styleClass}`}>
+      <div className="mb-1">
+        <StampLabel tone={stampTone}>{label}</StampLabel>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-display text-[36px] leading-none">
+          {value != null ? formatNum(value) : '—'}
+        </span>
+        <span className="font-mono text-sm text-graphite">kg</span>
+      </div>
+      <div className="mt-2 inline-flex items-center gap-1">{deltaEl()}</div>
     </div>
   );
+}
+
+function WorkingRow({
+  tone,
+  label,
+  weight,
+  completed,
+  total,
+}: {
+  tone: 'gold' | 'rust';
+  label: string;
+  weight?: number;
+  completed: number;
+  total: number;
+}) {
+  const done = completed >= total && total > 0;
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={`w-2.5 h-2.5 rounded-full ${tone === 'gold' ? 'bg-gold' : 'bg-rust'}`}
+      />
+      <span className="flex-1">
+        {label} @ <span className="font-mono font-semibold">{formatKg(weight ?? 0)}</span>
+      </span>
+      <span className="font-mono text-sm font-semibold">
+        {completed} / {total}
+      </span>
+      <span className={done ? 'text-moss' : 'text-graphite'}>{done ? '✓' : '·'}</span>
+    </div>
+  );
+}
+
+function formatNum(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
+}
+
+function formatKg(w: number): string {
+  return `${formatNum(w)} kg`;
 }

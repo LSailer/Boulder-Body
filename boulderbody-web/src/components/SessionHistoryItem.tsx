@@ -1,20 +1,13 @@
 import type { Session } from '../models/Session';
-import { isVolumeSession, isTrainingSession, getAttemptCounts, getSessionDuration } from '../models/Session';
-
-/**
- * List item component for displaying a past session.
- * Shows key stats and provides click navigation to summary.
- * Handles both volume and training session types.
- */
+import {
+  isVolumeSession,
+  isTrainingSession,
+  getAttemptCounts,
+} from '../models/Session';
 
 interface SessionHistoryItemProps {
-  /** The session to display */
   session: Session;
-
-  /** Called when user clicks the card */
   onClick: () => void;
-
-  /** Called when user clicks delete button */
   onDelete: (id: string) => void;
 }
 
@@ -23,92 +16,93 @@ export function SessionHistoryItem({
   onClick,
   onDelete,
 }: SessionHistoryItemProps) {
-  const duration = getSessionDuration(session);
-
-  // Format date as "Jan 31, 2026"
-  const dateStr = session.date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const weekday = session.date.toLocaleDateString('en-US', { weekday: 'short' });
+  const md = session.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   return (
     <div
       onClick={onClick}
-      className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow hover:shadow-lg transition-shadow cursor-pointer border border-gray-200 dark:border-gray-700"
+      className="flex items-center gap-3 p-3 rounded-xl border border-line bg-paper hover:bg-chalk/60 cursor-pointer transition-colors dark:bg-basalt/40 dark:hover:bg-basalt/70"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     >
-      <div className="flex justify-between items-start mb-2">
-        <div>
-          <div className="text-lg font-bold text-gray-900 dark:text-white">
-            {isVolumeSession(session) && `Level ${session.targetLevel}`}
-            {isTrainingSession(session) && 'Training Session'}
-          </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            {dateStr}
-          </div>
+      {isVolumeSession(session) ? (
+        <div className="w-11 h-11 rounded-xl bg-chalk border border-line flex items-center justify-center font-display text-lg text-rust dark:bg-basalt">
+          V{session.targetLevel}
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation(); // Prevent card click
-            onDelete(session.id);
-          }}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-          aria-label="Delete session"
-          title="Delete this session"
-        >
-          <span className="text-xl">🗑️</span>
-        </button>
+      ) : (
+        <div className="w-11 h-11 rounded-xl bg-chalk border border-line flex items-center justify-center text-xl dark:bg-basalt">
+          💪
+        </div>
+      )}
+
+      <div className="flex-1 min-w-0">
+        {isVolumeSession(session) && (
+          <>
+            <div className="font-semibold text-sm">
+              {weekday} · {md}
+            </div>
+            <div className="text-xs text-graphite">
+              {session.boulderCount} attempts
+            </div>
+          </>
+        )}
+        {isTrainingSession(session) && (
+          <>
+            <div className="font-semibold text-sm">
+              Training · {weekday}
+            </div>
+            <div className="text-xs text-graphite font-mono">
+              {session.trainingData.discoveredMax?.hang != null
+                ? `hang ${session.trainingData.discoveredMax.hang}`
+                : 'hang —'}
+              {' · '}
+              {session.trainingData.discoveredMax?.pullup != null
+                ? `pull ${session.trainingData.discoveredMax.pullup}`
+                : 'pull —'}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Volume Session Stats */}
       {isVolumeSession(session) && (
-        <>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="text-gray-600 dark:text-gray-300">
-              <span className="font-medium">{getAttemptCounts(session).flash}</span> flash,{' '}
-              <span className="font-medium">{getAttemptCounts(session).done}</span> done,{' '}
-              <span className="font-medium">{getAttemptCounts(session).fail}</span> fail
-            </div>
-            <div className="text-right text-gray-500 dark:text-gray-400">
-              {duration}
-            </div>
-          </div>
-
-          {/* Show unlogged count if any */}
-          {getAttemptCounts(session).unlogged > 0 && (
-            <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-              {getAttemptCounts(session).unlogged} unlogged
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Training Session Stats */}
-      {isTrainingSession(session) && (
-        <div className="text-sm">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600 dark:text-gray-300 mb-1">
-            <div>
-              Hangs: {session.trainingData.discoveredMax?.hang != null ? `max ${session.trainingData.discoveredMax.hang}kg` : '—'} ({session.trainingData.hangSets.filter(s => s.completed).length}/{session.trainingData.hangSets.length})
-            </div>
-            <div>
-              Pull-ups: {session.trainingData.discoveredMax?.pullup != null ? `max ${session.trainingData.discoveredMax.pullup}kg` : '—'} ({session.trainingData.pullupSets.filter(s => s.completed).length}/{session.trainingData.pullupSets.length})
-            </div>
-            {(session.trainingData.benchSets ?? []).length > 0 && (
-              <div>
-                Bench: {session.trainingData.benchWeight ?? 10}kg ({(session.trainingData.benchSets ?? []).filter(s => s.completed).length}/{(session.trainingData.benchSets ?? []).length})
-              </div>
-            )}
-            {(session.trainingData.trapBarSets ?? []).length > 0 && (
-              <div>
-                Trap Bar: {session.trainingData.trapBarWeight ?? 20}kg ({(session.trainingData.trapBarSets ?? []).filter(s => s.completed).length}/{(session.trainingData.trapBarSets ?? []).length})
-              </div>
-            )}
-          </div>
-          <div className="text-right text-gray-500 dark:text-gray-400">
-            {duration}
-          </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="font-semibold text-gold">
+            {getAttemptCounts(session).flash}
+          </span>
+          <span className="text-graphite">·</span>
+          <span className="font-semibold text-moss">
+            {getAttemptCounts(session).done}
+          </span>
+          <span className="text-graphite">·</span>
+          <span className="font-semibold text-graphite">
+            {getAttemptCounts(session).fail}
+          </span>
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(session.id);
+        }}
+        className="p-2 rounded-lg text-graphite hover:text-rust hover:bg-chalk transition-colors"
+        aria-label="Delete session"
+        title="Delete this session"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          <path d="M10 11v6M14 11v6" />
+        </svg>
+      </button>
     </div>
   );
 }

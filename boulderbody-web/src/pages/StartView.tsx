@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Session, VolumeSession, TrainingSession } from '../models/Session';
 import { isVolumeSession } from '../models/Session';
 import type { SessionType } from '../models/SessionType';
-import { TRAINING_PROTOCOL } from '../models/SessionType';
 import type { TrainingRecommendation } from '../logic/TrainingRecommender';
 import {
   getAllSessions,
@@ -12,31 +11,29 @@ import {
   getLastTrainingSession,
   saveSession,
   deleteSession,
+  getBadges,
 } from '../logic/StorageManager';
 import { getRecommendation } from '../logic/SessionRecommender';
 import { getTrainingRecommendation } from '../logic/TrainingRecommender';
+import { computeTotalXP, computeLevel, computeStreak } from '../logic/XPCalculator';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { SessionHistoryItem } from '../components/SessionHistoryItem';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { XPCard } from '../components/ui/XPCard';
+import { SessionTypeToggle } from '../components/ui/SessionTypeToggle';
+import { StampLabel } from '../components/ui/StampLabel';
+import { PaperCard } from '../components/ui/PaperCard';
+import { Counter } from '../components/ui/Counter';
+import { BadgeStrip } from '../components/ui/BadgeStrip';
 
-/**
- * Start View - Home screen with session form and history.
- * Displays recommended settings based on past performance for both session types.
- */
 export function StartView() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionType, setSessionType] = useState<SessionType>('volume');
 
-  // Volume session state
   const [level, setLevel] = useState(5);
   const [boulderCount, setBoulderCount] = useState(20);
-  const [volumeReason, setVolumeReason] = useState('');
 
-  // Training session state
-  const [benchWeight, setBenchWeight] = useState(10);
-  const [trapBarWeight, setTrapBarWeight] = useState(20);
-  const [trainingReason, setTrainingReason] = useState('');
   const [trainingRec, setTrainingRec] = useState<TrainingRecommendation | null>(null);
 
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -44,15 +41,20 @@ export function StartView() {
     date: string;
   } | null>(null);
 
-  // Load sessions and calculate recommendations on mount
+  // Badges are loaded once on mount and when the sessions list changes
+  // (a delete might remove their referenced session — refreshing here is
+  // cheap and keeps the strip in sync).
+  const [badges, setBadges] = useState(() => getBadges());
+  useEffect(() => {
+    setBadges(getBadges());
+  }, [sessions]);
+
   useEffect(() => {
     const allSessions = getAllSessions();
     setSessions(allSessions.filter((s) => s.isFinished));
 
-    // Check if there's an active session
     const activeSession = getCurrentSession();
     if (activeSession) {
-      // Resume active session - route based on type
       if (isVolumeSession(activeSession)) {
         navigate(`/session/${activeSession.id}`);
       } else {
@@ -61,27 +63,23 @@ export function StartView() {
       return;
     }
 
-    // Get volume recommendation
     const lastVolumeSession = getLastVolumeSession();
     const volumeRec = getRecommendation(lastVolumeSession);
     setLevel(volumeRec.level);
     setBoulderCount(volumeRec.boulderCount);
-    setVolumeReason(volumeRec.reason);
 
-    // Get training recommendation
     const lastTrainingSession = getLastTrainingSession();
-    const rec = getTrainingRecommendation(lastTrainingSession);
-    setBenchWeight(rec.benchWeight);
-    setTrapBarWeight(rec.trapBarWeight);
-    setTrainingReason(rec.reason);
-    setTrainingRec(rec);
+    setTrainingRec(getTrainingRecommendation(lastTrainingSession));
   }, [navigate]);
+
+  const totalXP = useMemo(() => computeTotalXP(sessions), [sessions]);
+  const levelInfo = useMemo(() => computeLevel(totalXP), [totalXP]);
+  const streak = useMemo(() => computeStreak(sessions), [sessions]);
 
   const handleStartSession = () => {
     let newSession: Session;
 
     if (sessionType === 'volume') {
-      // Create volume session
       const volumeSession: VolumeSession = {
         id: crypto.randomUUID(),
         sessionType: 'volume',
@@ -99,9 +97,10 @@ export function StartView() {
       saveSession(newSession);
       navigate(`/session/${newSession.id}`);
     } else {
-      // Create training session. Hang and pull-up start empty — TrainingSessionView
-      // appends the first max-test set using recommender.hangStart / pullupStart.
-      // Bench and trap-bar keep their fixed-weight 5-set scaffolding.
+      // New training sessions: hang/pullup empty (TrainingSessionView seeds the
+      // first max-test from the recommender). Bench/trap-bar dropped from the UI —
+      // we create empty arrays so the Training dashboard has nothing to render
+      // for those exercises. Legacy sessions keep their existing sets for Summary.
       const trainingSession: TrainingSession = {
         id: crypto.randomUUID(),
         sessionType: 'training',
@@ -109,22 +108,14 @@ export function StartView() {
         startTime: new Date(),
         isFinished: false,
         trainingData: {
-          benchWeight,
-          trapBarWeight,
           hangSets: [],
           pullupSets: [],
-          benchSets: Array.from({ length: TRAINING_PROTOCOL.benchSets }, (_, i) => ({
-            id: crypto.randomUUID(),
-            order: i + 1,
-            exercise: 'bench' as const,
-            completed: false,
-          })),
-          trapBarSets: Array.from({ length: TRAINING_PROTOCOL.trapBarSets }, (_, i) => ({
-            id: crypto.randomUUID(),
-            order: i + 1,
-            exercise: 'trapbar' as const,
-            completed: false,
-          })),
+          benchSets: [],
+          trapBarSets: [],
+          rampUpCap: {
+            hang: trainingRec?.lastWorking?.hang,
+            pullup: trainingRec?.lastWorking?.pullup,
+          },
         },
       };
       newSession = trainingSession;
@@ -136,7 +127,6 @@ export function StartView() {
   const handleDeleteSession = (id: string) => {
     const session = sessions.find((s) => s.id === id);
     if (!session) return;
-
     setDeleteConfirm({
       id,
       date: session.date.toLocaleDateString('en-US', {
@@ -149,199 +139,159 @@ export function StartView() {
 
   const confirmDelete = () => {
     if (!deleteConfirm) return;
-
     deleteSession(deleteConfirm.id);
     setSessions(sessions.filter((s) => s.id !== deleteConfirm.id));
     setDeleteConfirm(null);
 
-    // Recalculate both recommendations after deletion
     const lastVolumeSession = getLastVolumeSession();
     const volumeRec = getRecommendation(lastVolumeSession);
     setLevel(volumeRec.level);
     setBoulderCount(volumeRec.boulderCount);
-    setVolumeReason(volumeRec.reason);
 
     const lastTrainingSession = getLastTrainingSession();
-    const rec = getTrainingRecommendation(lastTrainingSession);
-    setBenchWeight(rec.benchWeight);
-    setTrapBarWeight(rec.trapBarWeight);
-    setTrainingReason(rec.reason);
-    setTrainingRec(rec);
+    setTrainingRec(getTrainingRecommendation(lastTrainingSession));
   };
 
-  // Last-max context for display above the Start button
+  const today = new Date();
+  const dateStamp = today
+    .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+    .replace(',', ' ·');
+
   const lastHangMax = trainingRec?.lastMax?.hang;
   const lastPullupMax = trainingRec?.lastMax?.pullup;
-  const hasLastMax = lastHangMax != null || lastPullupMax != null;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen">
+      <div className="max-w-[420px] mx-auto px-5 pt-5 pb-24">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            BoulderBody
-          </h1>
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <StampLabel>{dateStamp}</StampLabel>
+            <h1 className="font-display text-[34px] leading-none tracking-tight text-ink dark:text-paper">
+              BoulderBody
+            </h1>
+          </div>
           <ThemeToggle />
         </div>
 
-        {/* New Session Form */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-8">
-          <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
-            Start New Session
-          </h2>
-
-          {/* Session Type Selector */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-              Session Type
-            </label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSessionType('volume')}
-                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                  sessionType === 'volume'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                Volume
-              </button>
-              <button
-                onClick={() => setSessionType('training')}
-                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                  sessionType === 'training'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                Training
-              </button>
-            </div>
-          </div>
-
-          {/* Recommendation reason */}
-          {sessionType === 'volume' && volumeReason && (
-            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-              <span className="font-medium">Recommendation:</span> {volumeReason}
-            </div>
-          )}
-          {sessionType === 'training' && trainingRec && (
-            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-              {hasLastMax ? (
-                <>
-                  <div>
-                    <span className="font-medium">Last max:</span> hang {lastHangMax ?? 0}kg, pullup {lastPullupMax ?? 0}kg
-                  </div>
-                  <div className="mt-1">
-                    <span className="font-medium">Starting today at:</span> {trainingRec.hangStart}kg / {trainingRec.pullupStart}kg
-                  </div>
-                </>
-              ) : (
-                <span>{trainingReason}</span>
-              )}
-            </div>
-          )}
-
-          {/* Volume Session Inputs */}
-          {sessionType === 'volume' && (
-            <>
-              {/* Level input */}
-              <div className="mb-4">
-                <label
-                  htmlFor="level"
-                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
-                >
-                  Target Level
-                </label>
-                <input
-                  id="level"
-                  type="number"
-                  min="1"
-                  value={level}
-                  onChange={(e) => setLevel(parseInt(e.target.value) || 1)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Boulder count input */}
-              <div className="mb-6">
-                <label
-                  htmlFor="boulderCount"
-                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
-                >
-                  Number of Boulders
-                </label>
-                <input
-                  id="boulderCount"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={boulderCount}
-                  onChange={(e) => setBoulderCount(parseInt(e.target.value) || 1)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </>
-          )}
-
-          {/* Training Session Inputs */}
-          {sessionType === 'training' && (
-            <>
-              <div className="mb-4">
-                <label
-                  htmlFor="benchWeight"
-                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
-                >
-                  Bench Press Weight (kg) - {TRAINING_PROTOCOL.benchSets} sets of {TRAINING_PROTOCOL.benchReps} reps
-                </label>
-                <input
-                  id="benchWeight"
-                  type="number"
-                  min="0"
-                  step="2.5"
-                  value={benchWeight}
-                  onChange={(e) => setBenchWeight(parseFloat(e.target.value) || 0)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label
-                  htmlFor="trapBarWeight"
-                  className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300"
-                >
-                  Trap Bar Deadlift Weight (kg) - {TRAINING_PROTOCOL.trapBarSets} sets of {TRAINING_PROTOCOL.trapBarReps} reps
-                </label>
-                <input
-                  id="trapBarWeight"
-                  type="number"
-                  min="0"
-                  step="2.5"
-                  value={trapBarWeight}
-                  onChange={(e) => setTrapBarWeight(parseFloat(e.target.value) || 0)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </>
-          )}
-
-          {/* Start button */}
-          <button
-            onClick={handleStartSession}
-            className="w-full btn btn-primary text-lg py-3"
-          >
-            Start {sessionType === 'volume' ? 'Volume' : 'Training'} Session
-          </button>
+        {/* XP / Level card */}
+        <div className="mb-5">
+          <XPCard levelInfo={levelInfo} streak={streak} />
         </div>
 
-        {/* Session History */}
-        {sessions.length > 0 && (
+        {/* Session type toggle */}
+        <div className="mb-4">
+          <StampLabel className="mb-2 block">Today's session</StampLabel>
+          <SessionTypeToggle value={sessionType} onChange={setSessionType} />
+        </div>
+
+        {/* Climbing form */}
+        {sessionType === 'volume' && (
+          <PaperCard className="p-5 mb-5">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="font-display text-[22px] leading-tight">
+                  Send level {level}.
+                </div>
+                <div className="font-display text-[22px] leading-tight italic text-rust">
+                  Stick {boulderCount} problems.
+                </div>
+              </div>
+              <div className="w-14 h-14 rounded-2xl bg-chalk border border-line flex items-center justify-center font-display text-2xl text-rust engraved dark:bg-basalt">
+                V{level}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <Counter
+                label="Level"
+                value={level}
+                onChange={setLevel}
+                min={1}
+                max={17}
+              />
+              <Counter
+                label="Boulders"
+                value={boulderCount}
+                onChange={setBoulderCount}
+                min={1}
+                max={99}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleStartSession}
+              className="w-full py-4 rounded-xl bg-rust hover:bg-rustdark text-paper font-semibold text-base tracking-wide shadow-pebble transition-colors"
+            >
+              Begin climbing →
+            </button>
+          </PaperCard>
+        )}
+
+        {/* Training form */}
+        {sessionType === 'training' && trainingRec && (
+          <PaperCard className="p-5 mb-5">
+            <div className="mb-4">
+              <div className="font-display text-[22px] leading-tight">Strength day.</div>
+              <div className="font-display text-[22px] leading-tight italic text-rust">
+                Ramp to your max.
+              </div>
+            </div>
+
+            <div className="space-y-2 mb-4">
+              <ExercisePreviewRow
+                tone="gold"
+                name="Weighted hang"
+                startKg={trainingRec.hangStart}
+              />
+              <ExercisePreviewRow
+                tone="rust"
+                name="Weighted pull-up"
+                startKg={trainingRec.pullupStart}
+              />
+            </div>
+
+            <div className="p-3 rounded-xl bg-gold/12 border border-gold/40 text-[12px] text-ink dark:text-paper mb-4 flex gap-2 items-start">
+              <span className="mt-0.5">🌱</span>
+              <div>
+                Hang & pull-up will <span className="font-semibold">ramp in +5 kg</span>{' '}
+                until last working weight, then{' '}
+                <span className="font-semibold">+2.5 kg</span> to find today's max.
+              </div>
+            </div>
+
+            {(lastHangMax != null || lastPullupMax != null) && (
+              <div className="mb-4 text-xs text-graphite">
+                <span className="font-semibold text-ink dark:text-paper">Last max:</span>{' '}
+                hang {lastHangMax ?? 0} kg · pull-up {lastPullupMax ?? 0} kg
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleStartSession}
+              className="w-full py-4 rounded-xl bg-rust hover:bg-rustdark text-paper font-semibold text-base tracking-wide shadow-pebble transition-colors"
+            >
+              Begin training →
+            </button>
+          </PaperCard>
+        )}
+
+        {/* Recent badges */}
+        {badges.length > 0 && (
+          <div className="mb-5">
+            <BadgeStrip badges={badges} />
+          </div>
+        )}
+
+        <hr className="zine-rule my-5" />
+
+        {/* History */}
+        {sessions.length > 0 ? (
           <div>
-            <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
-              Session History
-            </h2>
-            <div className="space-y-3">
+            <StampLabel className="mb-3 block">Recent sessions</StampLabel>
+            <div className="space-y-2">
               {sessions
                 .sort((a, b) => b.date.getTime() - a.date.getTime())
                 .map((session) => (
@@ -354,20 +304,16 @@ export function StartView() {
                 ))}
             </div>
           </div>
-        )}
-
-        {/* Empty state */}
-        {sessions.length === 0 && (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-            <p className="text-lg">No sessions yet. Start your first one!</p>
+        ) : (
+          <div className="text-center py-8 text-graphite text-sm">
+            No sessions yet. Start your first one above.
           </div>
         )}
       </div>
 
-      {/* Delete confirmation dialog */}
       <ConfirmDialog
         isOpen={!!deleteConfirm}
-        title="Delete Session"
+        title="Delete session"
         message={`Delete session from ${deleteConfirm?.date}? This cannot be undone.`}
         confirmText="Delete"
         variant="danger"
@@ -375,5 +321,60 @@ export function StartView() {
         onCancel={() => setDeleteConfirm(null)}
       />
     </div>
+  );
+}
+
+function ExercisePreviewRow({
+  tone,
+  name,
+  startKg,
+}: {
+  tone: 'gold' | 'rust';
+  name: string;
+  startKg: number;
+}) {
+  const chip =
+    tone === 'gold'
+      ? 'bg-gold/15 border-gold/40 text-gold'
+      : 'bg-rust/12 border-rust/40 text-rust';
+  return (
+    <div className="flex items-center justify-between p-3 rounded-xl bg-chalk/50 border border-line dark:bg-basalt/40">
+      <div className="flex items-center gap-2.5">
+        <span
+          className={`w-8 h-8 rounded-lg border flex items-center justify-center ${chip}`}
+        >
+          <ExerciseIcon name={name} />
+        </span>
+        <span className="font-semibold text-sm">{name}</span>
+      </div>
+      <div className="text-xs text-graphite">
+        start <span className="font-mono font-semibold text-ink dark:text-paper">{startKg} kg</span>
+      </div>
+    </div>
+  );
+}
+
+function ExerciseIcon({ name }: { name: string }) {
+  if (name.toLowerCase().includes('hang')) {
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="4.5" rx="1" />
+        <path d="M8 8.5 v1.5 M12 8.5 v1.5 M16 8.5 v1.5" />
+        <path d="M10 10 v3.5 M14 10 v3.5" />
+        <rect x="7.5" y="13.5" width="9" height="5" rx="1" />
+        <line x1="10" y1="16" x2="14" y2="16" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="4" x2="21" y2="4" />
+      <path d="M5 4 V2 M19 4 V2" />
+      <path d="M10 4 C10 6 11 7 12 7 C13 7 14 6 14 4" />
+      <circle cx="12" cy="9.3" r="1.8" />
+      <line x1="12" y1="11" x2="12" y2="14.5" />
+      <rect x="8.5" y="14.5" width="7" height="4" rx="1" />
+      <line x1="10" y1="16.5" x2="14" y2="16.5" />
+    </svg>
   );
 }
