@@ -1,9 +1,11 @@
 import type { Session, VolumeSession, TrainingSession } from '../models/Session';
 import { isVolumeSession, isTrainingSession } from '../models/Session';
+import type { EarnedBadge } from '../models/Gamification';
 
 // localStorage keys
 const SESSIONS_KEY = 'boulderbody_sessions';
 const THEME_KEY = 'boulderbody_theme';
+const BADGES_KEY = 'boulderbody_badges';
 
 /**
  * Storage schema for sessions data.
@@ -291,11 +293,11 @@ export function getLastTrainingSession(): TrainingSession | null {
 
 /**
  * Get current theme preference.
- * Defaults to 'dark' if not set.
+ * Defaults to 'light' — the redesigned palette is light-first.
  */
 export function getTheme(): 'light' | 'dark' {
   const stored = localStorage.getItem(THEME_KEY);
-  return (stored as 'light' | 'dark') || 'dark';
+  return (stored as 'light' | 'dark') || 'light';
 }
 
 /**
@@ -313,4 +315,34 @@ export function setTheme(theme: 'light' | 'dark'): void {
 export function initializeTheme(): void {
   const theme = getTheme();
   document.documentElement.classList.toggle('dark', theme === 'dark');
+}
+
+/**
+ * Load earned badges from localStorage.
+ * Deserializes unlockedAt back to Date.
+ */
+export function getBadges(): EarnedBadge[] {
+  try {
+    const raw = localStorage.getItem(BADGES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Array<Omit<EarnedBadge, 'unlockedAt'> & { unlockedAt: string }>;
+    return parsed.map((b) => ({ ...b, unlockedAt: new Date(b.unlockedAt) }));
+  } catch (error) {
+    console.error('Error loading badges:', error);
+    return [];
+  }
+}
+
+/**
+ * Append newly-unlocked badges. No-op if empty.
+ */
+export function addBadges(newBadges: EarnedBadge[]): void {
+  if (newBadges.length === 0) return;
+  try {
+    const existing = getBadges();
+    const merged = [...existing, ...newBadges];
+    localStorage.setItem(BADGES_KEY, JSON.stringify(merged));
+  } catch (error) {
+    console.error('Failed to persist badges:', error);
+  }
 }

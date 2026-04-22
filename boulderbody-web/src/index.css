@@ -1,37 +1,152 @@
-/* Tailwind base styles */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Global styles */
 @layer base {
+  html {
+    font-family: '"DM Sans"', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
   body {
-    @apply bg-white dark:bg-gray-900 text-gray-900 dark:text-white;
-    @apply min-h-screen;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    @apply min-h-screen text-ink;
+    background: #efe8db;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(200, 90, 46, 0.05), transparent 40%),
+      radial-gradient(circle at 80% 60%, rgba(232, 169, 60, 0.05), transparent 45%);
+    background-attachment: fixed;
+  }
+
+  html.dark body {
+    background: #1a1612;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(200, 90, 46, 0.08), transparent 40%),
+      radial-gradient(circle at 80% 60%, rgba(232, 169, 60, 0.06), transparent 45%);
+    @apply text-paper;
   }
 }
 
-/* Custom component styles */
 @layer components {
-  /* Buttons get minimum 44px touch targets for mobile */
-  .btn {
-    @apply min-h-[44px] px-6 py-2 rounded-lg font-medium transition-colors;
+  .stamp {
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-weight: 600;
+    font-size: 11px;
+    color: #6b6b6b;
   }
 
-  .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-700 text-white;
+  html.dark .stamp {
+    color: #a8a39a;
   }
 
-  .btn-success {
-    @apply bg-green-600 hover:bg-green-700 text-white;
+  .paper-tex {
+    background-color: #fdfbf6;
+    background-image: radial-gradient(rgba(31, 26, 23, 0.025) 1px, transparent 1px);
+    background-size: 3px 3px;
+    color: #1f1a17;
   }
 
-  .btn-danger {
-    @apply bg-red-600 hover:bg-red-700 text-white;
+  html.dark .paper-tex {
+    background-color: #2a241f;
+    background-image: radial-gradient(rgba(253, 251, 246, 0.04) 1px, transparent 1px);
+    color: #f5f0e8;
   }
 
-  .btn-secondary {
-    @apply bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600;
+  .zine-rule {
+    border: 0;
+    height: 2px;
+    background: repeating-linear-gradient(
+      90deg,
+      #1f1a17 0 6px,
+      transparent 6px 12px
+    );
+    opacity: 0.25;
+  }
+
+  html.dark .zine-rule {
+    background: repeating-linear-gradient(
+      90deg,
+      #f5f0e8 0 6px,
+      transparent 6px 12px
+    );
+    opacity: 0.2;
+  }
+
+  .engraved {
+    box-shadow:
+      0 1px 0 rgba(253, 251, 246, 0.6) inset,
+      0 -1px 0 rgba(31, 26, 23, 0.06) inset;
+  }
+
+  .xp-fill {
+    background: linear-gradient(90deg, #e8a93c 0%, #c85a2e 100%);
+  }
+
+  .ring-timer {
+    background: conic-gradient(
+      #e8a93c var(--ring-progress, 0%),
+      rgba(31, 26, 23, 0.08) var(--ring-progress, 0%) 100%
+    );
+  }
+
+  .ring-rest {
+    background: conic-gradient(
+      #4a5d3a var(--ring-progress, 0%),
+      rgba(31, 26, 23, 0.08) var(--ring-progress, 0%) 100%
+    );
+  }
+
+  .ring-prep {
+    background: conic-gradient(
+      #c85a2e var(--ring-progress, 0%),
+      rgba(31, 26, 23, 0.08) var(--ring-progress, 0%) 100%
+    );
+  }
+
+  .flame {
+    display: inline-block;
+    animation: flicker 2.2s ease-in-out infinite;
+  }
+
+  .dot-live {
+    animation: pulseDot 1.4s ease-in-out infinite;
+  }
+
+  .hold-1 { border-radius: 18px 26px 22px 14px; }
+  .hold-2 { border-radius: 24px 16px 28px 20px; }
+  .hold-3 { border-radius: 16px 24px 14px 26px; }
+  .hold-4 { border-radius: 28px 14px 20px 22px; }
+  .hold-5 { border-radius: 20px 28px 16px 24px; }
+  .hold-6 { border-radius: 14px 22px 26px 18px; }
+
+  .ring-gold {
+    position: relative;
+  }
+  .ring-gold::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    box-shadow: 0 0 0 2px #e8a93c, 0 0 14px 2px rgba(232, 169, 60, 0.4);
+    pointer-events: none;
+  }
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    transform: rotate(-2deg) scale(1);
+  }
+  50% {
+    transform: rotate(2deg) scale(1.05);
+  }
+}
+
+@keyframes pulseDot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
   }
 }

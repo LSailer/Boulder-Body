@@ -4,33 +4,15 @@
  */
 
 interface ConfirmDialogProps {
-  /** Whether the dialog is visible */
   isOpen: boolean;
-
-  /** Dialog title */
   title: string;
-
-  /** Dialog message/description */
   message: string;
-
-  /** Text for confirm button (default: "Confirm") */
   confirmText?: string;
-
-  /** Text for cancel button (default: "Cancel") */
   cancelText?: string;
-
-  /** Called when user confirms */
   onConfirm: () => void;
-
-  /** Called when user cancels */
   onCancel: () => void;
-
-  /** Visual style variant (default: "default", danger for destructive actions) */
   variant?: 'danger' | 'default';
-
-  /** Whether clicking the backdrop closes the dialog (default: true) */
   closeOnBackdrop?: boolean;
-
   /** Hide the cancel button — use when the dialog has no valid "no" answer */
   hideCancel?: boolean;
 }
@@ -47,35 +29,39 @@ export function ConfirmDialog({
   closeOnBackdrop = true,
   hideCancel = false,
 }: ConfirmDialogProps) {
-  if (!isOpen) {
-    return null;
-  }
+  if (!isOpen) return null;
 
-  const confirmButtonClass =
+  const confirmClass =
     variant === 'danger'
-      ? 'btn btn-danger'
-      : 'btn btn-primary';
+      ? 'bg-rust hover:bg-rustdark text-paper'
+      : 'bg-ink hover:bg-basalt text-paper dark:bg-paper dark:hover:bg-chalk dark:text-ink';
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      className="fixed inset-0 bg-ink/60 flex items-center justify-center p-4 z-50"
       onClick={closeOnBackdrop ? onCancel : undefined}
     >
       <div
-        className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full shadow-xl"
-        onClick={(e) => e.stopPropagation()} // Prevent close on content click
+        className="paper-tex rounded-[24px] p-6 max-w-sm w-full shadow-pebble border border-line"
+        onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold mb-2 text-gray-900 dark:text-white">
-          {title}
-        </h3>
-        <p className="text-gray-600 dark:text-gray-300 mb-6">{message}</p>
+        <h3 className="font-display text-xl mb-2">{title}</h3>
+        <p className="text-sm text-graphite mb-6">{message}</p>
         <div className="flex gap-3 justify-end">
           {!hideCancel && (
-            <button onClick={onCancel} className="btn btn-secondary">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-5 py-3 rounded-xl border border-line bg-paper text-ink font-semibold hover:bg-chalk dark:bg-basalt dark:text-paper dark:hover:bg-ink"
+            >
               {cancelText}
             </button>
           )}
-          <button onClick={onConfirm} className={confirmButtonClass}>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={`px-5 py-3 rounded-xl font-semibold shadow-pebble ${confirmClass}`}
+          >
             {confirmText}
           </button>
         </div>

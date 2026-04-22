@@ -1,18 +1,46 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { VolumeSession } from '../models/Session';
-import { isVolumeSession } from '../models/Session';
+import { isVolumeSession, getAttemptCounts } from '../models/Session';
 import type { BoulderAttempt, AttemptResult } from '../models/BoulderAttempt';
-import { getAllSessions, updateSession, deleteSession } from '../logic/StorageManager';
+import {
+  getAllSessions,
+  updateSession,
+  deleteSession,
+  addBadges,
+  getBadges,
+} from '../logic/StorageManager';
 import { BoulderLogModal } from '../components/BoulderLogModal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { getAttemptCounts } from '../models/Session';
+import { HoldTile, type HoldState } from '../components/ui/HoldTile';
+import { StampLabel } from '../components/ui/StampLabel';
+import {
+  XP_PER_SEND,
+  XP_PER_TOP,
+  XP_PER_PROJECT,
+} from '../models/Gamification';
+import { evaluateBadges } from '../logic/BadgeEngine';
 
-/**
- * Active Session View - Live session logging interface.
- * Shows grid of boulders and allows logging attempts.
- * Only handles volume sessions - training sessions use TrainingSessionView.
- */
+function attemptToState(
+  attempt: BoulderAttempt,
+  currentOrder: number | null
+): HoldState {
+  if (attempt.result === 'flash') return 'send';
+  if (attempt.result === 'done') return 'top';
+  if (attempt.result === 'fail') return 'project';
+  if (currentOrder === attempt.order) return 'current';
+  return 'empty';
+}
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
 export function ActiveSessionView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
@@ -22,64 +50,59 @@ export function ActiveSessionView() {
   );
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [showBreakConfirm, setShowBreakConfirm] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (!sessionId) {
       navigate('/');
       return;
     }
-
     const allSessions = getAllSessions();
     const found = allSessions.find((s) => s.id === sessionId);
-
-    if (!found) {
+    if (!found || !isVolumeSession(found)) {
       navigate('/');
       return;
     }
-
-    // This view only handles volume sessions
-    if (!isVolumeSession(found)) {
-      navigate('/');
-      return;
-    }
-
-    // If already finished, go to summary
     if (found.isFinished) {
       navigate(`/summary/${sessionId}`);
       return;
     }
-
     setSession(found);
   }, [sessionId, navigate]);
 
-  if (!session) {
-    return null; // Loading state
-  }
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const counts = useMemo(
+    () => (session ? getAttemptCounts(session) : null),
+    [session]
+  );
+
+  if (!session || !counts) return null;
+
+  const firstUnlogged = session.attempts.find((a) => a.result === undefined);
+  const currentOrder = firstUnlogged?.order ?? null;
+  const elapsed = now - session.startTime.getTime();
+  const logged = session.attempts.filter((a) => a.result !== undefined).length;
+  const xpSoFar =
+    counts.flash * XP_PER_SEND + counts.done * XP_PER_TOP + counts.fail * XP_PER_PROJECT;
 
   const handleLogAttempt = (result: AttemptResult, comment?: string) => {
     if (!selectedAttempt) return;
-
-    // Update the attempt
     const updatedAttempts = session.attempts.map((a) =>
       a.id === selectedAttempt.id
         ? { ...a, result, comment, timestamp: new Date() }
         : a
     );
-
-    const updatedSession = {
-      ...session,
-      attempts: updatedAttempts,
-    };
-
+    const updatedSession: VolumeSession = { ...session, attempts: updatedAttempts };
     updateSession(updatedSession);
     setSession(updatedSession);
     setSelectedAttempt(null);
   };
 
   const handleFinishSession = () => {
-    const counts = getAttemptCounts(session);
-
-    // If more than 5 unlogged, show confirmation
     if (counts.unlogged > 5) {
       setShowFinishConfirm(true);
     } else {
@@ -88,13 +111,19 @@ export function ActiveSessionView() {
   };
 
   const finishSession = () => {
-    const finishedSession = {
+    const finishedSession: VolumeSession = {
       ...session,
       isFinished: true,
       endTime: new Date(),
     };
-
     updateSession(finishedSession);
+
+    // Evaluate badges
+    const all = getAllSessions().filter((s) => s.isFinished);
+    const existing = getBadges();
+    const newBadges = evaluateBadges(finishedSession, all, existing);
+    addBadges(newBadges);
+
     navigate(`/summary/${session.id}`);
   };
 
@@ -103,98 +132,95 @@ export function ActiveSessionView() {
     navigate('/');
   };
 
-  const counts = getAttemptCounts(session);
+  const total = session.boulderCount;
+  const loggedProgress = total > 0 ? logged / total : 0;
+  const leftCount = total - logged;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen">
+      <div className="max-w-[420px] mx-auto px-5 pt-5 pb-24">
         {/* Header */}
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <button
-              onClick={() => navigate('/')}
-              className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-            >
-              ← Back
-            </button>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Level {session.targetLevel} Session
-            </h1>
-            <button
-              onClick={() => setShowBreakConfirm(true)}
-              className="text-red-500 hover:text-red-400 font-medium"
-            >
-              Break Session
-            </button>
+        <div className="flex items-center justify-between mb-4">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="w-10 h-10 rounded-full border border-line bg-paper/60 flex items-center justify-center text-ink hover:bg-chalk dark:bg-basalt/60 dark:text-paper"
+            aria-label="Back"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <div className="text-center">
+            <div className="stamp flex items-center justify-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-rust dot-live" />
+              Live · <span className="font-mono">{formatElapsed(elapsed)}</span>
+            </div>
+            <div className="font-display text-xl leading-tight">
+              Level {session.targetLevel} · V{session.targetLevel}
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowBreakConfirm(true)}
+            className="px-3 h-10 rounded-full border border-line text-xs font-semibold text-graphite hover:bg-chalk dark:hover:bg-basalt/60"
+          >
+            End
+          </button>
+        </div>
 
-          {/* Progress stats */}
-          <div className="grid grid-cols-4 gap-2 text-center text-sm">
-            <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded">
-              <div className="font-bold text-green-800 dark:text-green-200">
-                {counts.flash}
-              </div>
-              <div className="text-green-600 dark:text-green-400">Flash</div>
-            </div>
-            <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded">
-              <div className="font-bold text-blue-800 dark:text-blue-200">
-                {counts.done}
-              </div>
-              <div className="text-blue-600 dark:text-blue-400">Done</div>
-            </div>
-            <div className="bg-red-100 dark:bg-red-900/30 p-2 rounded">
-              <div className="font-bold text-red-800 dark:text-red-200">
-                {counts.fail}
-              </div>
-              <div className="text-red-600 dark:text-red-400">Fail</div>
-            </div>
-            <div className="bg-gray-100 dark:bg-gray-700 p-2 rounded">
-              <div className="font-bold text-gray-800 dark:text-gray-200">
-                {counts.unlogged}
-              </div>
-              <div className="text-gray-600 dark:text-gray-400">Unlogged</div>
-            </div>
+        {/* Stats card */}
+        <div className="mb-5 p-4 rounded-2xl bg-basalt text-paper">
+          <div className="flex items-center justify-between mb-3">
+            <StampLabel tone="paperMuted">This session</StampLabel>
+            <div className="text-sm text-gold font-semibold">+{xpSoFar} XP</div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <StatCell value={counts.flash} label="Sends" tone="gold" />
+            <StatCell value={counts.done} label="Tops" tone="moss" />
+            <StatCell value={counts.fail} label="Projects" tone="graphite" />
+            <StatCell value={leftCount} label="Left" tone="muted" />
+          </div>
+          <div className="mt-4 h-1.5 rounded-full bg-paper/10 overflow-hidden">
+            <div
+              className="h-full xp-fill rounded-full transition-[width] duration-500"
+              style={{ width: `${Math.round(loggedProgress * 100)}%` }}
+            />
           </div>
         </div>
 
-        {/* Boulder grid */}
-        <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3 mb-6">
-          {session.attempts.map((attempt) => {
-            const bgColor = attempt.result
-              ? attempt.result === 'flash'
-                ? 'bg-green-600 text-white'
-                : attempt.result === 'done'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-red-600 text-white'
-              : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-2 border-gray-300 dark:border-gray-600';
-
-            return (
-              <button
+        {/* Grid */}
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <StampLabel>Boulders</StampLabel>
+            <span className="text-[11px] text-graphite">Tap to log</span>
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            {session.attempts.map((attempt) => (
+              <HoldTile
                 key={attempt.id}
+                order={attempt.order}
+                state={attemptToState(attempt, currentOrder)}
                 onClick={() => setSelectedAttempt(attempt)}
-                className={`${bgColor} rounded-lg p-4 min-h-[80px] font-bold text-lg hover:opacity-80 transition-opacity shadow`}
-                title={
-                  attempt.result
-                    ? `#${attempt.order}: ${attempt.result}${attempt.comment ? ` - ${attempt.comment}` : ''}`
-                    : `Log boulder #${attempt.order}`
-                }
-              >
-                {attempt.order}
-              </button>
-            );
-          })}
+              />
+            ))}
+          </div>
+          <div className="mt-4 flex items-center justify-center gap-4 text-[11px] text-graphite">
+            <LegendDot colorClass="bg-gold" label="Send" />
+            <LegendDot colorClass="bg-moss" label="Top" />
+            <LegendDot colorClass="bg-graphite" label="Project" />
+          </div>
         </div>
 
-        {/* Finish button */}
+        {/* Finish CTA */}
         <button
+          type="button"
           onClick={handleFinishSession}
-          className="w-full btn btn-success text-lg py-3"
+          disabled={logged === 0}
+          className="w-full py-4 rounded-xl bg-moss hover:bg-moss/90 disabled:bg-graphite/40 disabled:cursor-not-allowed text-paper font-semibold tracking-wide shadow-pebble transition-colors"
         >
-          Finish Session
+          Finish session & collect XP →
         </button>
       </div>
 
-      {/* Boulder log modal */}
       {selectedAttempt && (
         <BoulderLogModal
           isOpen={true}
@@ -204,28 +230,61 @@ export function ActiveSessionView() {
         />
       )}
 
-      {/* Finish confirmation */}
       <ConfirmDialog
         isOpen={showFinishConfirm}
-        title="Unlogged Boulders"
-        message={`You have ${counts.unlogged} unlogged boulders. They will count as fails. Finish session anyway?`}
-        confirmText="Finish Anyway"
-        cancelText="Keep Logging"
-        onConfirm={finishSession}
+        title="Unlogged boulders"
+        message={`You have ${counts.unlogged} unlogged boulders. They'll count as projects. Finish session anyway?`}
+        confirmText="Finish anyway"
+        cancelText="Keep logging"
+        onConfirm={() => {
+          setShowFinishConfirm(false);
+          finishSession();
+        }}
         onCancel={() => setShowFinishConfirm(false)}
       />
 
-      {/* Break session confirmation */}
       <ConfirmDialog
         isOpen={showBreakConfirm}
-        title="Break Session?"
-        message="Are you sure you want to end this session? It will be deleted and won't appear in your history."
-        confirmText="End Session"
-        cancelText="Continue"
+        title="End this session?"
+        message="The session will be deleted and won't appear in your history."
+        confirmText="End session"
+        cancelText="Keep going"
         variant="danger"
         onConfirm={handleBreakSession}
         onCancel={() => setShowBreakConfirm(false)}
       />
     </div>
+  );
+}
+
+function StatCell({
+  value,
+  label,
+  tone,
+}: {
+  value: number;
+  label: string;
+  tone: 'gold' | 'moss' | 'graphite' | 'muted';
+}) {
+  const toneClass = {
+    gold: 'text-gold',
+    moss: 'text-moss',
+    graphite: 'text-graphite',
+    muted: 'text-paper/40',
+  }[tone];
+  return (
+    <div className="text-center">
+      <div className={`font-display text-2xl ${toneClass}`}>{value}</div>
+      <div className="text-[10px] text-paper/70 uppercase tracking-wider">{label}</div>
+    </div>
+  );
+}
+
+function LegendDot({ colorClass, label }: { colorClass: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={`w-3 h-3 rounded-full inline-block ${colorClass}`} />
+      {label}
+    </span>
   );
 }
