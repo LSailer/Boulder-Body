@@ -1,5 +1,11 @@
 import type { SessionType } from '../../models/SessionType';
 
+const OPTIONS: { value: SessionType; icon: string; label: string }[] = [
+  { value: 'volume', icon: '🧗', label: 'Climbing' },
+  { value: 'route', icon: '🎯', label: 'Routes' },
+  { value: 'training', icon: '💪', label: 'Training' },
+];
+
 export function SessionTypeToggle({
   value,
   onChange,
@@ -11,26 +17,19 @@ export function SessionTypeToggle({
   const baseOff = 'text-graphite hover:text-ink';
   return (
     <div className="p-1 rounded-2xl bg-chalk border border-line flex gap-1">
-      <button
-        type="button"
-        onClick={() => onChange('volume')}
-        className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-semibold transition-colors ${
-          value === 'volume' ? baseOn : baseOff
-        }`}
-      >
-        <span className={value === 'volume' ? '' : 'opacity-60'}>🧗</span>
-        <span>Climbing</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange('training')}
-        className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-semibold transition-colors ${
-          value === 'training' ? baseOn : baseOff
-        }`}
-      >
-        <span className={value === 'training' ? '' : 'opacity-60'}>💪</span>
-        <span>Training</span>
-      </button>
+      {OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-1.5 font-semibold text-sm transition-colors ${
+            value === opt.value ? baseOn : baseOff
+          }`}
+        >
+          <span className={value === opt.value ? '' : 'opacity-60'}>{opt.icon}</span>
+          <span>{opt.label}</span>
+        </button>
+      ))}
     </div>
   );
 }

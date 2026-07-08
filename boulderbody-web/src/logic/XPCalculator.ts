@@ -6,8 +6,13 @@
  * stored session array each time.
  */
 
-import type { Session, TrainingSession, VolumeSession } from '../models/Session';
-import { isVolumeSession, isTrainingSession } from '../models/Session';
+import type {
+  Session,
+  TrainingSession,
+  VolumeSession,
+  RouteSession,
+} from '../models/Session';
+import { isVolumeSession, isTrainingSession, isRouteSession } from '../models/Session';
 import {
   XP_PER_SEND,
   XP_PER_TOP,
@@ -46,9 +51,24 @@ function computeTrainingXP(session: TrainingSession): number {
   return xp;
 }
 
+/**
+ * Route XP mirrors volume scoring: a flash is worth the most, a send after
+ * tries less, and an attempt that didn't top still earns a little for effort.
+ */
+function computeRouteXP(session: RouteSession): number {
+  let xp = 0;
+  for (const r of session.routes) {
+    if (r.result === 'flash') xp += XP_PER_SEND;
+    else if (r.result === 'send') xp += XP_PER_TOP;
+    else if (r.result === 'fail') xp += XP_PER_PROJECT;
+  }
+  return xp;
+}
+
 export function computeSessionXP(session: Session): number {
   if (isVolumeSession(session)) return computeVolumeXP(session);
   if (isTrainingSession(session)) return computeTrainingXP(session);
+  if (isRouteSession(session)) return computeRouteXP(session);
   return 0;
 }
 

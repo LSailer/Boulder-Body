@@ -4,6 +4,7 @@ import { initializeTheme } from './logic/StorageManager';
 import { StartView } from './pages/StartView';
 import { ActiveSessionView } from './pages/ActiveSessionView';
 import { TrainingSessionView } from './pages/TrainingSessionView';
+import { RouteSessionView } from './pages/RouteSessionView';
 import { SummaryView } from './pages/SummaryView';
 
 /**
@@ -26,6 +27,7 @@ function App() {
         <Route path="/" element={<StartView />} />
         <Route path="/session/:sessionId" element={<ActiveSessionView />} />
         <Route path="/training/:sessionId" element={<TrainingSessionView />} />
+        <Route path="/route/:sessionId" element={<RouteSessionView />} />
         <Route path="/summary/:sessionId" element={<SummaryView />} />
       </Routes>
     </BrowserRouter>

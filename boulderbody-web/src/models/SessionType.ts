@@ -6,7 +6,7 @@
  * sets at 80% of that max. Bench and trap-bar are fixed-weight (unchanged).
  */
 
-export type SessionType = 'volume' | 'training';
+export type SessionType = 'volume' | 'training' | 'route';
 
 /**
  * Represents a single set within a training session.
