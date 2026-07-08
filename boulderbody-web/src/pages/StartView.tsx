@@ -1,14 +1,22 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Session, VolumeSession, TrainingSession } from '../models/Session';
-import { isVolumeSession } from '../models/Session';
+import type {
+  Session,
+  VolumeSession,
+  TrainingSession,
+  RouteSession,
+} from '../models/Session';
+import { isVolumeSession, isRouteSession } from '../models/Session';
 import type { SessionType } from '../models/SessionType';
+import type { Gym } from '../models/Gym';
 import type { TrainingRecommendation } from '../logic/TrainingRecommender';
 import {
   getAllSessions,
   getCurrentSession,
   getLastVolumeSession,
   getLastTrainingSession,
+  getAllGyms,
+  saveGym,
   saveSession,
   deleteSession,
   getBadges,
@@ -36,6 +44,13 @@ export function StartView() {
 
   const [trainingRec, setTrainingRec] = useState<TrainingRecommendation | null>(null);
 
+  // Routes mode: saved gyms, the chosen gym, and the "add gym" form.
+  const [gyms, setGyms] = useState<Gym[]>([]);
+  const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
+  const [showAddGym, setShowAddGym] = useState(false);
+  const [newGymName, setNewGymName] = useState('');
+  const [newGymMax, setNewGymMax] = useState(8);
+
   const [deleteConfirm, setDeleteConfirm] = useState<{
     id: string;
     date: string;
@@ -57,6 +72,8 @@ export function StartView() {
     if (activeSession) {
       if (isVolumeSession(activeSession)) {
         navigate(`/session/${activeSession.id}`);
+      } else if (isRouteSession(activeSession)) {
+        navigate(`/route/${activeSession.id}`);
       } else {
         navigate(`/training/${activeSession.id}`);
       }
@@ -70,6 +87,18 @@ export function StartView() {
 
     const lastTrainingSession = getLastTrainingSession();
     setTrainingRec(getTrainingRecommendation(lastTrainingSession));
+
+    // Preselect the gym used most recently so the common case is one tap.
+    const savedGyms = getAllGyms();
+    setGyms(savedGyms);
+    const lastRoute = allSessions
+      .filter(isRouteSession)
+      .sort((a, b) => b.date.getTime() - a.date.getTime())[0];
+    const preselect =
+      (lastRoute && savedGyms.find((g) => g.id === lastRoute.gymId)?.id) ??
+      savedGyms[0]?.id ??
+      null;
+    setSelectedGymId(preselect);
   }, [navigate]);
 
   const totalXP = useMemo(() => computeTotalXP(sessions), [sessions]);
@@ -96,6 +125,23 @@ export function StartView() {
       newSession = volumeSession;
       saveSession(newSession);
       navigate(`/session/${newSession.id}`);
+    } else if (sessionType === 'route') {
+      const gym = gyms.find((g) => g.id === selectedGymId);
+      if (!gym) return; // Start button is disabled until a gym is chosen
+      const routeSession: RouteSession = {
+        id: crypto.randomUUID(),
+        sessionType: 'route',
+        date: new Date(),
+        startTime: new Date(),
+        isFinished: false,
+        gymId: gym.id,
+        gymName: gym.name,
+        maxLevel: gym.maxLevel,
+        routes: [],
+      };
+      newSession = routeSession;
+      saveSession(newSession);
+      navigate(`/route/${newSession.id}`);
     } else {
       // New training sessions: hang/pullup empty (TrainingSessionView seeds the
       // first max-test from the recommender). Bench/trap-bar dropped from the UI —
@@ -122,6 +168,18 @@ export function StartView() {
       saveSession(newSession);
       navigate(`/training/${newSession.id}`);
     }
+  };
+
+  const handleAddGym = () => {
+    const name = newGymName.trim();
+    if (!name || newGymMax < 3) return;
+    const gym: Gym = { id: crypto.randomUUID(), name, maxLevel: newGymMax };
+    saveGym(gym);
+    setGyms((prev) => [...prev, gym]);
+    setSelectedGymId(gym.id);
+    setNewGymName('');
+    setNewGymMax(8);
+    setShowAddGym(false);
   };
 
   const handleDeleteSession = (id: string) => {
@@ -274,6 +332,107 @@ export function StartView() {
               className="w-full py-4 rounded-xl bg-rust hover:bg-rustdark text-paper font-semibold text-base tracking-wide shadow-pebble transition-colors"
             >
               Begin training →
+            </button>
+          </PaperCard>
+        )}
+
+        {/* Routes form */}
+        {sessionType === 'route' && (
+          <PaperCard className="p-5 mb-5">
+            <div className="mb-4">
+              <div className="font-display text-[22px] leading-tight">Log every route.</div>
+              <div className="font-display text-[22px] leading-tight italic text-rust">
+                Grade by grade.
+              </div>
+            </div>
+
+            <StampLabel className="mb-2 block">Where are you climbing?</StampLabel>
+
+            {gyms.length > 0 && (
+              <div className="space-y-2 mb-3">
+                {gyms.map((gym) => {
+                  const on = gym.id === selectedGymId;
+                  return (
+                    <button
+                      key={gym.id}
+                      type="button"
+                      onClick={() => setSelectedGymId(gym.id)}
+                      className={`w-full flex items-center justify-between gap-2 p-3 rounded-xl border text-left transition-colors ${
+                        on
+                          ? 'border-rust bg-rust/5 dark:bg-rust/10'
+                          : 'border-line bg-chalk/50 hover:bg-chalk dark:bg-basalt/40'
+                      }`}
+                    >
+                      <span>
+                        <span className="block font-display text-lg leading-tight">
+                          {gym.name}
+                        </span>
+                        <span className="block text-[11px] text-graphite uppercase tracking-wider">
+                          Levels 1–{gym.maxLevel}
+                        </span>
+                      </span>
+                      <StampLabel tone={on ? 'rust' : 'graphite'}>
+                        {on ? '✓' : 'Select'}
+                      </StampLabel>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {showAddGym ? (
+              <div className="p-3 rounded-xl border border-line bg-chalk/50 dark:bg-basalt/40 mb-3">
+                <StampLabel className="mb-1 block">Gym name</StampLabel>
+                <input
+                  value={newGymName}
+                  onChange={(e) => setNewGymName(e.target.value)}
+                  placeholder="e.g. Boulderwelt West"
+                  className="w-full mb-3 px-3 py-2.5 rounded-lg border border-line bg-paper text-ink dark:bg-basalt/60 dark:text-paper"
+                />
+                <div className="mb-3">
+                  <Counter
+                    label="Highest level"
+                    value={newGymMax}
+                    onChange={setNewGymMax}
+                    min={3}
+                    max={20}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddGym(false)}
+                    className="flex-1 py-2.5 rounded-lg border border-line text-graphite text-sm font-semibold hover:bg-chalk"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddGym}
+                    disabled={!newGymName.trim()}
+                    className="flex-1 py-2.5 rounded-lg bg-moss text-paper text-sm font-semibold disabled:bg-graphite/40 disabled:cursor-not-allowed"
+                  >
+                    Save gym
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAddGym(true)}
+                className="w-full mb-3 py-3 rounded-xl border border-dashed border-clay text-clay font-semibold hover:bg-clay/5"
+              >
+                + Add a new gym
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleStartSession}
+              disabled={!selectedGymId}
+              className="w-full py-4 rounded-xl bg-rust hover:bg-rustdark disabled:bg-graphite/40 disabled:cursor-not-allowed text-paper font-semibold text-base tracking-wide shadow-pebble transition-colors"
+            >
+              Begin routes →
             </button>
           </PaperCard>
         )}

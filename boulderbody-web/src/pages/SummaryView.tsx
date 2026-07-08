@@ -1,16 +1,26 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { Session, TrainingSession, VolumeSession } from '../models/Session';
+import type {
+  Session,
+  TrainingSession,
+  VolumeSession,
+  RouteSession,
+} from '../models/Session';
 import {
   isVolumeSession,
   isTrainingSession,
+  isRouteSession,
   getAttemptCounts,
+  getRouteCounts,
+  getRoutePercentages,
   getSessionDuration,
 } from '../models/Session';
+import type { RouteEntry } from '../models/RouteEntry';
 import {
   getAllSessions,
   deleteSession,
   getBadges,
+  getLastRouteSessionForGym,
 } from '../logic/StorageManager';
 import { getTrainingRecommendation } from '../logic/TrainingRecommender';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -35,6 +45,7 @@ export function SummaryView() {
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [prevTraining, setPrevTraining] = useState<TrainingSession | null>(null);
+  const [prevRoute, setPrevRoute] = useState<RouteSession | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
@@ -58,6 +69,10 @@ export function SummaryView() {
         )
         .sort((a, b) => b.date.getTime() - a.date.getTime());
       setPrevTraining(priorTraining[0] ?? null);
+    }
+
+    if (isRouteSession(found)) {
+      setPrevRoute(getLastRouteSessionForGym(found.gymId, found.id));
     }
   }, [sessionId, navigate]);
 
@@ -132,6 +147,15 @@ export function SummaryView() {
 
         {isVolumeSession(session) && (
           <VolumeSummary session={session} dateStamp={dateStamp} duration={duration} />
+        )}
+
+        {isRouteSession(session) && (
+          <RouteSummary
+            session={session}
+            prevSession={prevRoute}
+            dateStamp={dateStamp}
+            duration={duration}
+          />
         )}
 
         {isTrainingSession(session) && (
@@ -337,6 +361,172 @@ function formatMs(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/*
+ * ────────────────────────────────────────────────────────────────────────────
+ * Route summary
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+
+function RouteSummary({
+  session,
+  prevSession,
+  dateStamp,
+  duration,
+}: {
+  session: RouteSession;
+  prevSession: RouteSession | null;
+  dateStamp: string;
+  duration: string;
+}) {
+  const counts = getRouteCounts(session.routes);
+  const total = counts.total;
+  const pctThis = getRoutePercentages(session.routes);
+  const pctPrev = prevSession ? getRoutePercentages(prevSession.routes) : null;
+
+  // "Sent" = flash + send, mirroring how the volume donut treats success.
+  const sentPct = total > 0 ? Math.round(((counts.flash + counts.send) / total) * 100) : 0;
+
+  const donutStyle = {
+    background: `conic-gradient(
+      #e8a93c 0 ${pctThis.flash}%,
+      #4a5d3a ${pctThis.flash}% ${pctThis.flash + pctThis.send}%,
+      #6b6b6b ${pctThis.flash + pctThis.send}% 100%
+    )`,
+  } as const;
+
+  // Per-level breakdown, ascending. Levels with no routes are omitted.
+  const levels = Array.from(new Set(session.routes.map((r) => r.level))).sort(
+    (a, b) => a - b
+  );
+
+  return (
+    <>
+      <div className="mb-4 p-5 rounded-2xl bg-paper border border-line paper-tex">
+        <div className="flex items-center justify-between mb-1">
+          <StampLabel>{dateStamp}</StampLabel>
+          <span className="text-[11px] text-graphite">{duration}</span>
+        </div>
+        <div className="font-display text-[22px] leading-tight mb-4">
+          {session.gymName} · {total} {total === 1 ? 'route' : 'routes'}
+        </div>
+
+        <div className="flex items-center gap-5">
+          <div className="relative w-36 h-36 shrink-0">
+            <div className="w-full h-full rounded-full" style={donutStyle} />
+            <div className="absolute inset-[14px] paper-tex rounded-full flex flex-col items-center justify-center border border-line">
+              <div className="font-display text-3xl leading-none">{sentPct}%</div>
+              <div className="stamp mt-1">Sent</div>
+            </div>
+          </div>
+          <div className="flex-1 space-y-3">
+            <LegendRow dotClass="bg-gold" label="Flash" value={counts.flash} />
+            <LegendRow dotClass="bg-moss" label="Send" value={counts.send} />
+            <LegendRow dotClass="bg-graphite" label="Fail" value={counts.fail} />
+          </div>
+        </div>
+      </div>
+
+      {/* Comparison vs. previous session at the same gym */}
+      <div className="mb-2 flex items-center justify-between">
+        <StampLabel>vs. your last session here</StampLabel>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-2">
+        <CompareCard tone="gold" label="Flash" pct={pctThis.flash} prevPct={pctPrev?.flash ?? null} />
+        <CompareCard tone="moss" label="Send" pct={pctThis.send} prevPct={pctPrev?.send ?? null} />
+        <CompareCard tone="graphite" label="Fail" pct={pctThis.fail} prevPct={pctPrev?.fail ?? null} />
+      </div>
+      <p className="text-[11px] text-graphite mb-5">
+        {prevSession
+          ? `Compared against your previous session at ${session.gymName}.`
+          : `No previous session at ${session.gymName} yet — this is your baseline.`}
+      </p>
+
+      {/* Per-level breakdown */}
+      <hr className="zine-rule my-5" />
+      <StampLabel className="mb-3 block">Breakdown by level</StampLabel>
+      {total === 0 ? (
+        <p className="text-xs text-graphite mb-5">No routes were logged this session.</p>
+      ) : (
+        <div className="space-y-2 mb-5">
+          {levels.map((lv) => (
+            <LevelBreakdownRow
+              key={lv}
+              level={lv}
+              routes={session.routes.filter((r) => r.level === lv)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function CompareCard({
+  tone,
+  label,
+  pct,
+  prevPct,
+}: {
+  tone: 'gold' | 'moss' | 'graphite';
+  label: string;
+  pct: number;
+  prevPct: number | null;
+}) {
+  const borderClass = {
+    gold: 'border-gold/40',
+    moss: 'border-moss/40',
+    graphite: 'border-graphite/40',
+  }[tone];
+  const stampTone = tone;
+
+  const deltaEl = () => {
+    if (prevPct === null) {
+      return <span className="text-[11px] text-graphite font-semibold">— first here</span>;
+    }
+    const d = pct - prevPct;
+    if (d > 0) {
+      return (
+        <span className="text-[11px] text-moss font-semibold">↑ +{d}% vs {prevPct}%</span>
+      );
+    }
+    if (d < 0) {
+      return (
+        <span className="text-[11px] text-rust font-semibold">↓ {d}% vs {prevPct}%</span>
+      );
+    }
+    return <span className="text-[11px] text-graphite font-semibold">→ same</span>;
+  };
+
+  return (
+    <div className={`p-3 rounded-2xl border-2 ${borderClass}`}>
+      <StampLabel tone={stampTone}>{label}</StampLabel>
+      <div className="font-display text-[30px] leading-none mt-1">{pct}%</div>
+      <div className="mt-2">{deltaEl()}</div>
+    </div>
+  );
+}
+
+function LevelBreakdownRow({ level, routes }: { level: number; routes: RouteEntry[] }) {
+  const c = getRouteCounts(routes);
+  const sentPct = c.total > 0 ? Math.round(((c.flash + c.send) / c.total) * 100) : 0;
+  const seg = (n: number, cls: string) =>
+    n > 0 ? <span className={cls} style={{ width: `${(n / c.total) * 100}%` }} /> : null;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-8 h-8 rounded-lg bg-chalk border border-line flex items-center justify-center font-mono font-bold text-sm dark:bg-basalt">
+        {level}
+      </span>
+      <div className="flex-1 h-2 rounded-full bg-line overflow-hidden flex">
+        {seg(c.flash, 'bg-gold')}
+        {seg(c.send, 'bg-moss')}
+        {seg(c.fail, 'bg-graphite')}
+      </div>
+      <span className="font-mono text-xs text-graphite w-8 text-right">{c.total}</span>
+      <span className="font-mono text-xs font-semibold w-10 text-right">{sentPct}%</span>
+    </div>
+  );
 }
 
 /*

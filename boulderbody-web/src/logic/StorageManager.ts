@@ -1,11 +1,18 @@
-import type { Session, VolumeSession, TrainingSession } from '../models/Session';
-import { isVolumeSession, isTrainingSession } from '../models/Session';
+import type {
+  Session,
+  VolumeSession,
+  TrainingSession,
+  RouteSession,
+} from '../models/Session';
+import { isVolumeSession, isTrainingSession, isRouteSession } from '../models/Session';
+import type { Gym } from '../models/Gym';
 import type { EarnedBadge } from '../models/Gamification';
 
 // localStorage keys
 const SESSIONS_KEY = 'boulderbody_sessions';
 const THEME_KEY = 'boulderbody_theme';
 const BADGES_KEY = 'boulderbody_badges';
+const GYMS_KEY = 'boulderbody_gyms';
 
 /**
  * Storage schema for sessions data.
@@ -105,6 +112,21 @@ function deserializeSession(data: any): Session {
           timestamp: s.timestamp ? new Date(s.timestamp) : undefined,
         })),
       },
+    };
+  }
+
+  // Handle route sessions (per-route difficulty). Routes carry their own
+  // timestamps, deserialized the same way as volume attempts.
+  if (data.sessionType === 'route') {
+    return {
+      ...data,
+      date: new Date(data.date),
+      startTime: new Date(data.startTime),
+      endTime: data.endTime ? new Date(data.endTime) : undefined,
+      routes: data.routes.map((r: any) => ({
+        ...r,
+        timestamp: r.timestamp ? new Date(r.timestamp) : undefined,
+      })),
     };
   }
 
@@ -289,6 +311,66 @@ export function getLastTrainingSession(): TrainingSession | null {
   // Sort by date descending and return the first one
   trainingFinished.sort((a, b) => b.date.getTime() - a.date.getTime());
   return trainingFinished[0];
+}
+
+/**
+ * Get the most recent finished route session at a specific gym.
+ * Used by the summary view to compare against "your last session here".
+ * @param gymId The gym to scope the lookup to
+ * @param excludeId Optional session id to exclude (e.g. the one being summarized)
+ */
+export function getLastRouteSessionForGym(
+  gymId: string,
+  excludeId?: string
+): RouteSession | null {
+  const sessions = getAllSessions();
+  const routeFinished = sessions.filter(
+    (s): s is RouteSession =>
+      isRouteSession(s) &&
+      s.isFinished &&
+      s.gymId === gymId &&
+      s.id !== excludeId
+  );
+
+  if (routeFinished.length === 0) {
+    return null;
+  }
+
+  routeFinished.sort((a, b) => b.date.getTime() - a.date.getTime());
+  return routeFinished[0];
+}
+
+/**
+ * Get all saved gyms.
+ */
+export function getAllGyms(): Gym[] {
+  try {
+    const raw = localStorage.getItem(GYMS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as Gym[];
+  } catch (error) {
+    console.error('Error loading gyms:', error);
+    return [];
+  }
+}
+
+/**
+ * Save (insert or update) a gym, keyed by id.
+ */
+export function saveGym(gym: Gym): void {
+  try {
+    const gyms = getAllGyms();
+    const index = gyms.findIndex((g) => g.id === gym.id);
+    if (index === -1) {
+      gyms.push(gym);
+    } else {
+      gyms[index] = gym;
+    }
+    localStorage.setItem(GYMS_KEY, JSON.stringify(gyms));
+  } catch (error) {
+    console.error('Failed to persist gym:', error);
+    throw new Error('Failed to save gym. Storage may be unavailable.');
+  }
 }
 
 /**

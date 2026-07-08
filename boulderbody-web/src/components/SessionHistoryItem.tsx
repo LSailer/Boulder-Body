@@ -2,7 +2,9 @@ import type { Session } from '../models/Session';
 import {
   isVolumeSession,
   isTrainingSession,
+  isRouteSession,
   getAttemptCounts,
+  getRouteCounts,
 } from '../models/Session';
 
 interface SessionHistoryItemProps {
@@ -32,11 +34,17 @@ export function SessionHistoryItem({
         }
       }}
     >
-      {isVolumeSession(session) ? (
+      {isVolumeSession(session) && (
         <div className="w-11 h-11 rounded-xl bg-chalk border border-line flex items-center justify-center font-display text-lg text-rust dark:bg-basalt">
           V{session.targetLevel}
         </div>
-      ) : (
+      )}
+      {isRouteSession(session) && (
+        <div className="w-11 h-11 rounded-xl bg-chalk border border-line flex items-center justify-center text-xl dark:bg-basalt">
+          🎯
+        </div>
+      )}
+      {isTrainingSession(session) && (
         <div className="w-11 h-11 rounded-xl bg-chalk border border-line flex items-center justify-center text-xl dark:bg-basalt">
           💪
         </div>
@@ -50,6 +58,14 @@ export function SessionHistoryItem({
             </div>
             <div className="text-xs text-graphite">
               {session.boulderCount} attempts
+            </div>
+          </>
+        )}
+        {isRouteSession(session) && (
+          <>
+            <div className="font-semibold text-sm truncate">{session.gymName}</div>
+            <div className="text-xs text-graphite">
+              {weekday} · {md} · {session.routes.length} routes
             </div>
           </>
         )}
@@ -83,6 +99,22 @@ export function SessionHistoryItem({
           <span className="text-graphite">·</span>
           <span className="font-semibold text-graphite">
             {getAttemptCounts(session).fail}
+          </span>
+        </div>
+      )}
+
+      {isRouteSession(session) && (
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="font-semibold text-gold">
+            {getRouteCounts(session.routes).flash}
+          </span>
+          <span className="text-graphite">·</span>
+          <span className="font-semibold text-moss">
+            {getRouteCounts(session.routes).send}
+          </span>
+          <span className="text-graphite">·</span>
+          <span className="font-semibold text-graphite">
+            {getRouteCounts(session.routes).fail}
           </span>
         </div>
       )}
