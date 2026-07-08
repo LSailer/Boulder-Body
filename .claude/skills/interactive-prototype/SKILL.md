@@ -1,6 +1,6 @@
 ---
 name: interactive-prototype
-description: Build a new feature through a design-first, human-in-the-loop workflow — interview to close knowledge gaps, agree on a written spec, prototype the look & feel as a standalone HTML mockup for approval, THEN implement in the real code, verify it works, and open a PR. Use when the user wants to add a feature but design/behavior should be confirmed before touching production code (e.g. "prototype this first", "show me how it looks before building", "interactive prototype").
+description: Build a new feature through a design-first, human-in-the-loop workflow — interview to close knowledge gaps, agree on a written spec, prototype the look & feel with Claude design as a clickable Artifact for approval, THEN implement in the real code, verify it works, and open a PR. Use when the user wants to add a feature but design/behavior should be confirmed before touching production code (e.g. "prototype this first", "show me how it looks before building", "interactive prototype").
 ---
 
 # Interactive Prototype
@@ -31,9 +31,14 @@ Write back, as a clear bullet list, exactly what you will build: data model chan
 **Checkpoint:** the user approves or edits the bullet list.
 
 ### Step 3 — Design prototype (look & feel, no production code)
-Build a **standalone, self-contained HTML prototype** (inline CSS/JS, seeded fake data) that shows the real screens and the key interactions — using the project's actual colors/type/vocabulary. Deliver it so the user can see and click it (Artifact for a hosted page, or `SendUserFile` for a local `.html`). Walk through each screen and interaction.
+Use **Claude design** to build the prototype:
 
-**Checkpoint:** the user confirms the design AND the functional behavior. Iterate on the prototype until they do.
+1. **Load the `artifact-design` skill first** — before writing any markup — to calibrate the design investment and apply Claude's design fundamentals (typography, spacing, color, light/dark, responsiveness).
+2. Build a **self-contained, clickable prototype** (inline CSS/JS, seeded fake data) that shows the real screens and the key interactions, styled with the project's actual design tokens (colors, type, vocabulary) so it reads as the same product.
+3. **Publish it with the `Artifact` tool** so the user gets a hosted, shareable, theme-aware page they can click through. (Fall back to `SendUserFile` with a local `.html` only if Artifact is unavailable.) Keep the file in a scratch/mockups location, not in `src/`.
+4. Walk the user through each screen and interaction, and call out the design decisions baked in.
+
+**Checkpoint:** the user confirms the design AND the functional behavior. Iterate on the prototype — redeploy the same Artifact URL — until they do.
 
 ### Step 4 — Implement in the real code + verify
 Apply the approved design to the actual codebase, reusing existing patterns. Then **verify it actually works** — typecheck/lint/build, and drive the real feature end-to-end (not just tests). Fix until green and behaving as prototyped.
