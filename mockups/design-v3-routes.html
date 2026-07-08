@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BoulderBody · Routes mode prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --chalk:#F5F0E8; --paper:#FDFBF6; --basalt:#2A241F; --ink:#1F1A17;
+    --rust:#C85A2E; --rustdark:#A8461F; --gold:#E8A93C; --moss:#4A5D3A;
+    --clay:#8B6F47; --graphite:#6B6B6B; --line:#E3DCCF;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:"DM Sans",system-ui,sans-serif; color:var(--ink);
+    background:#efe8db;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(200,90,46,.05), transparent 40%),
+      radial-gradient(circle at 80% 60%, rgba(232,169,60,.05), transparent 45%);
+    min-height:100vh; padding:24px 12px 60px;
+  }
+  .display{font-family:"DM Serif Display",serif;}
+  .mono{font-family:"JetBrains Mono",ui-monospace,monospace;}
+  .stamp{letter-spacing:.2em; text-transform:uppercase; font-weight:600; font-size:11px; color:var(--graphite);}
+  .paper-tex{
+    background-color:var(--paper);
+    background-image:radial-gradient(rgba(31,26,23,.025) 1px, transparent 1px);
+    background-size:3px 3px;
+  }
+  .shell{max-width:420px; margin:0 auto;}
+  .intro{max-width:420px; margin:0 auto 18px; text-align:center;}
+  .intro h1{font-family:"DM Serif Display",serif; font-size:26px; margin:0 0 4px;}
+  .intro p{color:var(--graphite); font-size:13px; margin:0;}
+  .screen-tabs{display:flex; gap:6px; justify-content:center; margin:14px auto 20px; max-width:420px; flex-wrap:wrap;}
+  .screen-tabs button{
+    border:1px solid var(--line); background:var(--paper); border-radius:999px;
+    padding:7px 14px; font-size:12px; font-weight:600; color:var(--graphite); cursor:pointer;
+  }
+  .screen-tabs button.on{background:var(--basalt); color:var(--paper); border-color:var(--basalt);}
+  .phone{
+    max-width:420px; margin:0 auto; border:1px solid var(--line); border-radius:28px;
+    background:#efe8db; padding:18px 16px 22px; box-shadow:0 20px 50px -24px rgba(31,26,23,.4);
+  }
+  .screen{display:none;}
+  .screen.on{display:block;}
+  .card{border:1px solid var(--line); border-radius:20px; padding:18px;}
+  .row{display:flex; align-items:center; justify-content:space-between;}
+  .head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .iconbtn{width:40px; height:40px; border-radius:999px; border:1px solid var(--line); background:rgba(253,251,246,.6); display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);}
+  .live{display:flex; align-items:center; gap:6px; justify-content:center;}
+  .dot{width:6px; height:6px; border-radius:999px; background:var(--rust); display:inline-block; animation:pulse 1.4s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* gym chips */
+  .gymlist{display:flex; flex-direction:column; gap:10px; margin:14px 0;}
+  .gymrow{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border:1px solid var(--line); border-radius:16px; padding:14px 16px; background:var(--paper); cursor:pointer;
+  }
+  .gymrow.on{border-color:var(--rust); box-shadow:0 0 0 3px rgba(200,90,46,.12);}
+  .gymrow .name{font-family:"DM Serif Display",serif; font-size:18px;}
+  .gymrow .meta{font-size:11px; color:var(--graphite); letter-spacing:.08em; text-transform:uppercase;}
+  .addgym{border:1px dashed var(--clay); color:var(--clay); border-radius:16px; padding:14px; text-align:center; font-weight:600; cursor:pointer; background:transparent;}
+  .addform{border:1px solid var(--line); border-radius:16px; padding:16px; margin-top:10px; background:var(--chalk);}
+  .addform label{display:block; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--graphite); margin:0 0 6px; font-weight:600;}
+  .addform input{width:100%; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:15px; font-family:inherit; margin-bottom:12px; background:var(--paper);}
+  .btn{width:100%; border:0; border-radius:14px; padding:15px; font-weight:700; font-size:15px; cursor:pointer; color:var(--paper); letter-spacing:.02em;}
+  .btn.rust{background:var(--rust);} .btn.rust:hover{background:var(--rustdark);}
+  .btn.moss{background:var(--moss);}
+  .btn.ghost{background:transparent; color:var(--graphite); border:1px solid var(--line);}
+  .btn:disabled{background:rgba(107,107,107,.35); cursor:not-allowed;}
+
+  /* level picker */
+  .levels{display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 4px;}
+  .lvl{width:44px; height:44px; border-radius:12px; border:1px solid var(--line); background:var(--paper); font-weight:700; cursor:pointer; font-family:"JetBrains Mono",monospace; color:var(--ink);}
+  .lvl.on{background:var(--basalt); color:var(--paper); border-color:var(--basalt);}
+
+  /* outcome buttons */
+  .outcomes{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:14px;}
+  .oc{border:0; border-radius:16px; padding:16px 8px; cursor:pointer; color:#fff; font-weight:700; display:flex; flex-direction:column; align-items:center; gap:4px;}
+  .oc small{font-size:10px; opacity:.85; font-weight:600; letter-spacing:.08em; text-transform:uppercase;}
+  .oc.flash{background:var(--gold); color:#3a2c07;}
+  .oc.send{background:var(--moss);}
+  .oc.fail{background:var(--graphite);}
+  .oc:active{transform:translateY(1px);}
+
+  .statgrid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px;}
+  .stat{text-align:center;}
+  .stat .n{font-family:"DM Serif Display",serif; font-size:26px; line-height:1;}
+  .stat .l{font-size:10px; letter-spacing:.1em; text-transform:uppercase; margin-top:3px;}
+  .g-gold{color:var(--gold);} .g-moss{color:#8fae74;} .g-gray{color:#bdbdbd;} .g-mut{color:rgba(253,251,246,.5);}
+
+  .routelist{display:flex; flex-direction:column; gap:6px; margin-top:12px; max-height:210px; overflow:auto;}
+  .rentry{display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:12px; padding:9px 12px; background:var(--paper); font-size:13px;}
+  .pill{width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:700; font-family:"JetBrains Mono",monospace; font-size:12px; color:#fff; flex-shrink:0;}
+  .tag{font-weight:700; font-size:12px; letter-spacing:.06em; text-transform:uppercase;}
+  .tag.flash{color:#b7841f;} .tag.send{color:var(--moss);} .tag.fail{color:var(--graphite);}
+  .undo{margin-left:auto; border:0; background:transparent; color:var(--graphite); cursor:pointer; font-size:12px; text-decoration:underline;}
+
+  /* summary */
+  .donut{width:150px; height:150px; border-radius:999px; position:relative; flex-shrink:0;}
+  .donut .hole{position:absolute; inset:16px; border-radius:999px; background:var(--paper); display:flex; flex-direction:column; align-items:center; justify-content:center; border:1px solid var(--line);}
+  .legend{flex:1; display:flex; flex-direction:column; gap:12px;}
+  .legrow .top{display:flex; align-items:center; gap:8px;}
+  .swatch{width:11px; height:11px; border-radius:999px;}
+  .legrow .val{font-family:"DM Serif Display",serif; font-size:22px; line-height:1;}
+  .cmp{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:4px;}
+  .cmpcard{border:2px solid var(--line); border-radius:16px; padding:12px;}
+  .cmpcard .pct{font-family:"DM Serif Display",serif; font-size:30px; line-height:1;}
+  .delta{font-size:11px; font-weight:700; margin-top:6px;}
+  .up{color:var(--moss);} .down{color:var(--rust);} .same{color:var(--graphite);}
+  .lvltable{width:100%; border-collapse:collapse; margin-top:6px; font-size:13px;}
+  .lvltable th{ text-align:left; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--graphite); padding:6px 4px; font-weight:600;}
+  .lvltable td{padding:8px 4px; border-top:1px solid var(--line);}
+  .lvlbar{height:8px; border-radius:999px; overflow:hidden; display:flex; background:var(--line); min-width:90px;}
+  .zrule{border:0; height:2px; background:repeating-linear-gradient(90deg,#1f1a17 0 6px,transparent 6px 12px); opacity:.25; margin:18px 0;}
+  .note{font-size:11px; color:var(--graphite); text-align:center; margin-top:8px;}
+  .callout{background:var(--chalk); border:1px solid var(--line); border-radius:12px; padding:10px 12px; font-size:12px; color:var(--graphite); margin-top:10px;}
+  .xpbadge{color:var(--gold); font-weight:700; font-size:13px;}
+</style>
+</head>
+<body>
+  <div class="intro">
+    <h1 class="display">Routes mode — prototype</h1>
+    <p>Per-route difficulty · Flash / Send / Fail · gym-scoped stats. Click through the three screens; the session screen is fully interactive.</p>
+  </div>
+
+  <div class="screen-tabs">
+    <button data-go="start" class="on">1 · Pick gym</button>
+    <button data-go="active">2 · Log routes</button>
+    <button data-go="summary">3 · Summary</button>
+  </div>
+
+  <div class="phone">
+    <!-- ───────────────── SCREEN 1: PICK GYM ───────────────── -->
+    <section class="screen on" id="s-start">
+      <div class="head">
+        <div class="iconbtn">←</div>
+        <span class="stamp">New routes session</span>
+        <div style="width:40px"></div>
+      </div>
+
+      <div class="card paper-tex">
+        <span class="stamp">Where are you climbing?</span>
+        <div class="gymlist" id="gymlist"></div>
+        <button class="addgym" id="addGymBtn">+ Add a new gym</button>
+
+        <div class="addform" id="addForm" style="display:none;">
+          <label>Gym name</label>
+          <input id="gymName" placeholder="e.g. Boulderwelt West" />
+          <label>Highest difficulty level (1 – n)</label>
+          <input id="gymMax" type="number" min="3" max="20" value="8" />
+          <button class="btn moss" id="saveGym">Save gym</button>
+        </div>
+      </div>
+
+      <div style="height:14px"></div>
+      <button class="btn rust" id="startBtn" disabled>Start session at <span id="startGymName">—</span> →</button>
+      <div class="callout"><b>Model:</b> a gym is <span class="mono">{ id, name, maxLevel }</span>. Its scale is levels 1…maxLevel. Comparisons on the summary screen only use previous sessions <b>at this same gym</b>.</div>
+    </section>
+
+    <!-- ───────────────── SCREEN 2: ACTIVE ───────────────── -->
+    <section class="screen" id="s-active">
+      <div class="head">
+        <div class="iconbtn">←</div>
+        <div style="text-align:center;">
+          <div class="live stamp"><span class="dot"></span> Live · <span class="mono" id="timer">00:12:44</span></div>
+          <div class="display" style="font-size:19px;" id="activeGym">Boulderhalle Ost</div>
+        </div>
+        <div class="iconbtn" style="width:auto; padding:0 12px; font-size:12px; font-weight:700; color:var(--graphite)">End</div>
+      </div>
+
+      <!-- live totals -->
+      <div class="card" style="background:var(--basalt); color:var(--paper); border-color:var(--basalt); margin-bottom:16px;">
+        <div class="row" style="margin-bottom:12px;">
+          <span class="stamp" style="color:rgba(253,251,246,.6)">This session</span>
+          <span class="xpbadge" id="xpNow">+0 XP</span>
+        </div>
+        <div class="statgrid">
+          <div class="stat"><div class="n g-gold" id="cFlash">0</div><div class="l g-mut">Flash</div></div>
+          <div class="stat"><div class="n g-moss" id="cSend">0</div><div class="l g-mut">Send</div></div>
+          <div class="stat"><div class="n g-gray" id="cFail">0</div><div class="l g-mut">Fail</div></div>
+          <div class="stat"><div class="n" id="cTotal" style="color:var(--paper)">0</div><div class="l g-mut">Routes</div></div>
+        </div>
+        <div style="margin-top:12px; font-size:11px; color:rgba(253,251,246,.6); text-align:center;" id="pctLine">Flash 0% · Send 0% · Fail 0%</div>
+      </div>
+
+      <span class="stamp">Difficulty of the route you tried</span>
+      <div class="levels" id="levels"></div>
+
+      <div class="outcomes">
+        <button class="oc flash" data-r="flash">⚡<span>Flash</span><small>1st try</small></button>
+        <button class="oc send"  data-r="send">✓<span>Send</span><small>after tries</small></button>
+        <button class="oc fail"  data-r="fail">✗<span>Fail</span><small>didn't top</small></button>
+      </div>
+      <div class="note">Pick a level, then tap an outcome — each tap logs one route.</div>
+
+      <div class="routelist" id="routelist"></div>
+
+      <div style="height:14px"></div>
+      <button class="btn moss" id="finishBtn" disabled>Finish session & collect XP →</button>
+    </section>
+
+    <!-- ───────────────── SCREEN 3: SUMMARY ───────────────── -->
+    <section class="screen" id="s-summary">
+      <div class="head">
+        <div class="iconbtn">⌂</div>
+        <span class="stamp">Session report</span>
+        <div class="iconbtn">🗑</div>
+      </div>
+
+      <div class="card paper-tex" style="margin-bottom:14px;">
+        <div class="row" style="margin-bottom:2px;">
+          <span class="stamp" id="sumDate">Wed · Jul 8</span>
+          <span style="font-size:11px; color:var(--graphite)" id="sumDur">42m</span>
+        </div>
+        <div class="display" style="font-size:22px; margin-bottom:14px;" id="sumTitle">Boulderhalle Ost · 0 routes</div>
+        <div style="display:flex; align-items:center; gap:18px;">
+          <div class="donut" id="donut"><div class="hole"><div class="display" style="font-size:28px;" id="successPct">0%</div><div class="stamp">Sent</div></div></div>
+          <div class="legend">
+            <div class="legrow"><div class="top"><span class="swatch" style="background:var(--gold)"></span><span class="stamp">Flash</span></div><div class="val" id="lFlash">0</div></div>
+            <div class="legrow"><div class="top"><span class="swatch" style="background:var(--moss)"></span><span class="stamp">Send</span></div><div class="val" id="lSend">0</div></div>
+            <div class="legrow"><div class="top"><span class="swatch" style="background:var(--graphite)"></span><span class="stamp">Fail</span></div><div class="val" id="lFail">0</div></div>
+          </div>
+        </div>
+      </div>
+
+      <span class="stamp">vs. your last session here</span>
+      <div class="cmp" id="cmp"></div>
+      <div class="note" id="cmpNote"></div>
+
+      <hr class="zrule" />
+
+      <span class="stamp">Breakdown by level</span>
+      <table class="lvltable">
+        <thead><tr><th>Lvl</th><th>Mix (F/S/Fail)</th><th style="text-align:right;">Routes</th><th style="text-align:right;">Sent</th></tr></thead>
+        <tbody id="lvlBody"></tbody>
+      </table>
+
+      <hr class="zrule" />
+      <button class="btn rust">Start new session →</button>
+    </section>
+  </div>
+
+<script>
+  // ── seed data ──────────────────────────────────────────────
+  const GOLD="#E8A93C", MOSS="#4A5D3A", GRAPHITE="#6B6B6B";
+  const XP = {flash:15, send:10, fail:2};
+  let gyms = [
+    {id:'g1', name:'Boulderhalle Ost', maxLevel:8},
+    {id:'g2', name:'Kletterbox Süd', maxLevel:6},
+  ];
+  // a previous finished session at Boulderhalle Ost, to demo the comparison
+  const prevByGym = { g1: {flash:5, send:8, fail:7} }; // 25% / 40% / 35%
+  let selectedGym = null;
+  let session = { routes:[] };        // {level,result}
+  let selLevel = null;
+
+  const $ = s => document.querySelector(s);
+  const pct = (n,t) => t? Math.round(n/t*100) : 0;
+
+  // ── screen switching ───────────────────────────────────────
+  document.querySelectorAll('.screen-tabs button').forEach(b=>{
+    b.onclick = ()=>{
+      document.querySelectorAll('.screen-tabs button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      go(b.dataset.go);
+    };
+  });
+  function go(name){
+    $('#s-start').classList.toggle('on', name==='start');
+    $('#s-active').classList.toggle('on', name==='active');
+    $('#s-summary').classList.toggle('on', name==='summary');
+    if(name==='summary') renderSummary();
+  }
+
+  // ── screen 1: gyms ─────────────────────────────────────────
+  function renderGyms(){
+    const list = $('#gymlist'); list.innerHTML='';
+    gyms.forEach(g=>{
+      const row = document.createElement('div');
+      row.className = 'gymrow'+(selectedGym&&selectedGym.id===g.id?' on':'');
+      row.innerHTML = `<div><div class="name">${g.name}</div><div class="meta">Levels 1–${g.maxLevel}${prevByGym[g.id]?' · has history':' · new'}</div></div><div class="stamp">${selectedGym&&selectedGym.id===g.id?'✓':'select'}</div>`;
+      row.onclick = ()=>{ selectedGym=g; renderGyms(); $('#startBtn').disabled=false; $('#startGymName').textContent=g.name; };
+      list.appendChild(row);
+    });
+  }
+  $('#addGymBtn').onclick = ()=> $('#addForm').style.display = $('#addForm').style.display==='none'?'block':'none';
+  $('#saveGym').onclick = ()=>{
+    const name=$('#gymName').value.trim(); const max=parseInt($('#gymMax').value,10);
+    if(!name||!(max>=3)) return;
+    const g={id:'g'+(gyms.length+1), name, maxLevel:max};
+    gyms.push(g); $('#gymName').value=''; $('#addForm').style.display='none';
+    selectedGym=g; renderGyms(); $('#startBtn').disabled=false; $('#startGymName').textContent=g.name;
+  };
+  $('#startBtn').onclick = ()=>{
+    session={routes:[]}; selLevel=null;
+    $('#activeGym').textContent=selectedGym.name;
+    buildLevels(); renderActive();
+    document.querySelectorAll('.screen-tabs button').forEach(x=>x.classList.remove('on'));
+    document.querySelector('[data-go="active"]').classList.add('on');
+    go('active');
+  };
+
+  // ── screen 2: active ───────────────────────────────────────
+  function buildLevels(){
+    const wrap=$('#levels'); wrap.innerHTML='';
+    const max = (selectedGym?selectedGym.maxLevel:8);
+    for(let i=1;i<=max;i++){
+      const b=document.createElement('button'); b.className='lvl'; b.textContent=i;
+      b.onclick=()=>{ selLevel=i; document.querySelectorAll('.lvl').forEach(x=>x.classList.remove('on')); b.classList.add('on'); };
+      wrap.appendChild(b);
+    }
+  }
+  document.querySelectorAll('.oc').forEach(btn=>{
+    btn.onclick=()=>{
+      if(selLevel==null){ flashHint(); return; }
+      session.routes.push({level:selLevel, result:btn.dataset.r});
+      renderActive();
+    };
+  });
+  function flashHint(){ const l=$('#levels'); l.style.transition='none'; l.style.outline='2px solid var(--rust)'; l.style.borderRadius='10px'; setTimeout(()=>l.style.outline='none',500); }
+  function counts(routes){ return {
+    flash:routes.filter(r=>r.result==='flash').length,
+    send: routes.filter(r=>r.result==='send').length,
+    fail: routes.filter(r=>r.result==='fail').length,
+  };}
+  function renderActive(){
+    const c=counts(session.routes); const t=session.routes.length;
+    $('#cFlash').textContent=c.flash; $('#cSend').textContent=c.send; $('#cFail').textContent=c.fail; $('#cTotal').textContent=t;
+    $('#pctLine').textContent=`Flash ${pct(c.flash,t)}% · Send ${pct(c.send,t)}% · Fail ${pct(c.fail,t)}%`;
+    $('#xpNow').textContent='+'+(c.flash*XP.flash+c.send*XP.send+c.fail*XP.fail)+' XP';
+    $('#finishBtn').disabled = t===0;
+    const rl=$('#routelist'); rl.innerHTML='';
+    [...session.routes].reverse().forEach((r,idx)=>{
+      const realIdx=session.routes.length-1-idx;
+      const color = r.result==='flash'?GOLD:r.result==='send'?MOSS:GRAPHITE;
+      const label = r.result==='flash'?'Flash':r.result==='send'?'Send':'Fail';
+      const el=document.createElement('div'); el.className='rentry';
+      el.innerHTML=`<span class="pill" style="background:${color}">${r.level}</span><span>Level ${r.level}</span><span class="tag ${r.result}">${label}</span><button class="undo">remove</button>`;
+      el.querySelector('.undo').onclick=()=>{ session.routes.splice(realIdx,1); renderActive(); };
+      rl.appendChild(el);
+    });
+  }
+  $('#finishBtn').onclick=()=>{
+    document.querySelectorAll('.screen-tabs button').forEach(x=>x.classList.remove('on'));
+    document.querySelector('[data-go="summary"]').classList.add('on');
+    go('summary');
+  };
+
+  // ── screen 3: summary ──────────────────────────────────────
+  function renderSummary(){
+    const routes = session.routes.length? session.routes : demoRoutes();
+    const c=counts(routes); const t=routes.length;
+    const sentPct = pct(c.flash+c.send, t);
+    $('#sumTitle').textContent = `${selectedGym?selectedGym.name:'Boulderhalle Ost'} · ${t} routes`;
+    $('#successPct').textContent = sentPct+'%';
+    $('#lFlash').textContent=c.flash; $('#lSend').textContent=c.send; $('#lFail').textContent=c.fail;
+    const pf=pct(c.flash,t), ps=pct(c.send,t);
+    $('#donut').style.background=`conic-gradient(${GOLD} 0 ${pf}%, ${MOSS} ${pf}% ${pf+ps}%, ${GRAPHITE} ${pf+ps}% 100%)`;
+
+    // comparison vs previous same-gym session
+    const gid = selectedGym?selectedGym.id:'g1';
+    const prev = prevByGym[gid];
+    const cmp=$('#cmp'); cmp.innerHTML='';
+    const cats=[['Flash','flash',GOLD],['Send','send',MOSS],['Fail','fail',GRAPHITE]];
+    cats.forEach(([label,key,color])=>{
+      const cur = pct(c[key], t);
+      let deltaHtml='<div class="delta same">— first here</div>';
+      if(prev){
+        const pt=prev.flash+prev.send+prev.fail;
+        const pv=pct(prev[key], pt);
+        const d=cur-pv;
+        const cls = d>0?'up':d<0?'down':'same';
+        const arrow = d>0?'↑':d<0?'↓':'→';
+        deltaHtml=`<div class="delta ${cls}">${arrow} ${d>0?'+':''}${d}% vs ${pv}%</div>`;
+      }
+      const el=document.createElement('div'); el.className='cmpcard'; el.style.borderColor=color+'55';
+      el.innerHTML=`<span class="stamp" style="color:${color}">${label}</span><div class="pct">${cur}%</div>${deltaHtml}`;
+      cmp.appendChild(el);
+    });
+    $('#cmpNote').textContent = prev? 'Percentages compared against your previous session at this gym.' : 'No previous session at this gym yet — this is your baseline.';
+
+    // per-level breakdown
+    const byLevel={};
+    routes.forEach(r=>{ (byLevel[r.level]=byLevel[r.level]||{flash:0,send:0,fail:0,total:0}); byLevel[r.level][r.result]++; byLevel[r.level].total++; });
+    const body=$('#lvlBody'); body.innerHTML='';
+    Object.keys(byLevel).map(Number).sort((a,b)=>a-b).forEach(lv=>{
+      const d=byLevel[lv]; const sent=d.flash+d.send;
+      const seg=(n,col)=> n? `<span style="width:${n/d.total*100}%; background:${col}"></span>`:'';
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td class="mono" style="font-weight:700">${lv}</td>
+        <td><div class="lvlbar">${seg(d.flash,GOLD)}${seg(d.send,MOSS)}${seg(d.fail,GRAPHITE)}</div></td>
+        <td style="text-align:right" class="mono">${d.total}</td>
+        <td style="text-align:right" class="mono">${pct(sent,d.total)}%</td>`;
+      body.appendChild(tr);
+    });
+  }
+  function demoRoutes(){
+    // fallback demo so the summary looks populated if you jump straight to tab 3
+    const r=[];
+    const push=(lv,res,n)=>{for(let i=0;i<n;i++)r.push({level:lv,result:res});};
+    push(3,'flash',3); push(3,'send',1); push(4,'flash',2); push(4,'send',3); push(4,'fail',1);
+    push(5,'send',2); push(5,'fail',3); push(6,'fail',2); push(6,'send',1);
+    selectedGym = selectedGym || gyms[0];
+    return r;
+  }
+
+  // init
+  renderGyms(); buildLevels();
+</script>
+</body>
+</html>
