@@ -1,156 +1,62 @@
-
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Coding Coach Approach
+BoulderBody is a client-only React + TypeScript + Vite app for tracking bouldering sessions. All state lives in `localStorage`; it deploys to GitHub Pages at `/Boulder-Body/`.
 
-When working on this codebase, act as a coding coach by explaining your thought process and steps:
-
-1. **Explain Before Acting** - Before implementing changes, briefly explain what you're about to do and why it's the right approach for this codebase
-2. **Break Down Complex Tasks** - For multi-step implementations, outline the steps you'll take (e.g., "I'll create the data model first, then the storage logic, then wire it up to the UI")
-3. **Teach Through Code** - When introducing new patterns or technologies, explain why they're being used and how they fit into the architecture
-4. **Highlight Key Decisions** - Call out important architectural decisions, trade-offs, or conventions being followed (e.g., "Using localStorage instead of a backend because this is a client-only app")
-5. **Reference the Plan** - Refer to `planing_file.md` when implementing features to show how the current work fits into the overall roadmap
-6. **Explain Testing Strategy** - When adding features, mention how they should be tested and what edge cases to consider
-7. **Point Out Connections** - Show how new code connects to existing parts of the system (e.g., "This component will use the StorageManager we'll create in the logic folder")
-
-The goal is to help the developer understand not just what code is being written, but why and how it fits into the bigger picture.
-
-## Project Overview
-
-BoulderBody is a web application for tracking bouldering sessions. The app is built with React + TypeScript + Vite and uses localStorage for persistence. It will be deployed to GitHub Pages.
-
-**Key Features:**
-- Start bouldering sessions with recommended difficulty levels
-- Log boulder attempts (Flash/Done/Fail)
-- View session summaries with charts
-- Intelligent recommendation engine based on performance and time decay
-
-## Development Commands
+All source lives under `boulderbody-web/`. Run commands from there:
 
 ```bash
-# Navigate to web app directory first
-cd boulderbody-web
-
-# Install dependencies
 npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
+npm run dev          # vite dev server
+npm run build        # tsc -b && vite build && cp dist/index.html dist/404.html
 npm run preview
-
-# Run linting
-npm run lint
+npm run lint         # eslint .
 ```
 
-## Architecture
+The `cp dist/index.html dist/404.html` in `build` is the GitHub Pages SPA fallback — without it, deep links (e.g. `/summary/:id`) 404 on refresh.
 
-### Project Structure
+## Two session types (discriminated union)
 
-The codebase follows a feature-based structure within `boulderbody-web/`:
+`Session` in `models/Session.ts` is `VolumeSession | TrainingSession`, discriminated by `sessionType`. Always narrow with `isVolumeSession` / `isTrainingSession` before touching type-specific fields.
 
-```
-src/
-├── components/     # Reusable UI components
-├── pages/          # Main view components (routing)
-├── models/         # TypeScript type definitions
-└── logic/          # Business logic and utilities
-```
+- **Volume session** — target level + boulder count, each attempt is `flash | done | fail` (unlogged counts as fail for fail-rate math). Views: `StartView` → `ActiveSessionView` → `SummaryView`.
+- **Training session** — hang + pull-up use a **ramped max-test** (see `TrainingRecommender.ts` and `logic/weights.ts`): today starts at `lastWorking − 10 kg`, steps `+5 kg` until it reaches last working, then `+2.5 kg` per step. When the user taps "No more", working weight = `failed − 5 kg` (floored to 2.5 kg plate, ≥ 0) for 3 working sets × 3 reps. Bench and trap-bar are fixed-weight (5 × 3) with linear `+2.5 kg` progression on a fully completed session. Protocol constants in `models/SessionType.ts` (`TRAINING_PROTOCOL`).
 
-### Core Data Models
+Recommenders are split per type: `SessionRecommender.getRecommendation()` (fail-rate + time decay for volume) and `TrainingRecommender.getTrainingRecommendation()`. Likewise storage: `getLastVolumeSession()` / `getLastTrainingSession()` — `getLastFinishedSession()` is deprecated.
 
-**Session** (`src/models/Session.ts`):
-- Represents a complete bouldering session
-- Contains: id, date, targetLevel, boulderCount, isFinished, attempts[]
-- Sessions are persisted in localStorage
+## Gamification is derived, not stored
 
-**BoulderAttempt** (`src/models/BoulderAttempt.ts`):
-- Represents a single boulder attempt within a session
-- AttemptResult: 'flash' | 'done' | 'fail'
-- Each attempt has: id, order, result?, comment?, timestamp?
+XP, level, and streak are **recomputed from the session array on every render** by `logic/XPCalculator.ts` — never persisted, so there's no drift to reconcile. Only earned badges persist, under a separate `localStorage` key. Badge rules live in `logic/BadgeEngine.ts`, the catalog in `models/Gamification.ts`.
 
-### Key Components
+## Storage
 
-**Pages** (routing):
-- `StartView.tsx` - Home screen with session form and history
-- `ActiveSessionView.tsx` - Live session logging interface
-- `SummaryView.tsx` - Post-session statistics and charts
+`logic/StorageManager.ts` owns all `localStorage` I/O. Three keys:
+- `boulderbody_sessions` — versioned schema `{ version, sessions[] }`, currently **v4**
+- `boulderbody_theme` — `'light' | 'dark'`
+- `boulderbody_badges` — earned badges
 
-**Components**:
-- `BoulderLogModal.tsx` - Modal for logging attempt results (Flash/Done/Fail)
-- `SessionHistoryItem.tsx` - List item displaying past session summary
+Schema migrations run on load (`migrateV1toV2` … `migrateV3toV4`) and write back immediately. v3→v4 **drops legacy training sessions** because the old fixed-weight/ramp-up shape can't be reshaped into the 9c max-test/working structure without fabricating data. When the session shape changes, bump `CURRENT_VERSION` and add a migration — don't silently mutate on read.
 
-### Business Logic
+Dates are ISO strings on disk; `deserializeSession` rehydrates them (including nested `TrainingSet.timestamp`). Keep date handling at this boundary — don't leak ISO strings into components.
 
-**StorageManager** (`src/logic/StorageManager.ts`):
-- Manages localStorage CRUD operations
-- Key: `'boulderbody_sessions'`
-- Handles date serialization/deserialization
-- Key functions: getAllSessions(), saveSession(), updateSession(), deleteSession(), getCurrentSession(), getLastFinishedSession()
+Only one unfinished session should exist at a time (`getCurrentSession()`). Session and set IDs use `crypto.randomUUID()`.
 
-**SessionRecommender** (`src/logic/SessionRecommender.ts`):
-- Calculates recommended level for next session based on:
-  1. Performance adjustment (fail rate: <25% → +1 level, >75% → -1 level)
-  2. Time decay (8-14 days → -1 level, >14 days → -2 levels)
-  3. Level clamping (minimum level = 1)
-- Default recommendation: Level 5, 20 boulders
+## Routing & deploy
 
-## Technology Stack
+`App.tsx` wires `BrowserRouter basename="/Boulder-Body"`, matching `base: '/Boulder-Body/'` in `vite.config.ts`. Routes: `/`, `/session/:id` (volume), `/training/:id`, `/summary/:id`. `.github/workflows/deploy.yml` builds on push to `main` and publishes `boulderbody-web/dist` to Pages.
 
-- **React 19** with TypeScript
-- **Vite** for build tooling and dev server
-- **React Router v6** for navigation (to be added)
-- **Recharts** for donut charts (to be added)
-- **TailwindCSS** for styling with dark theme (to be added)
-- **localStorage** for data persistence
+## UI layout
 
-## Deployment
+- `components/` — feature components (modals, history row, theme toggle, max-test prompt)
+- `components/ui/` — presentational atoms (XPCard, PaperCard, HoldTile, RingTimer, RampBar, BadgeStrip, Counter, StampLabel, …). Prefer composing these over inline Tailwind when adding new views.
 
-Configured for GitHub Pages deployment:
-- Set `base` in `vite.config.ts` to match repository name
-- GitHub Actions workflow (`.github/workflows/deploy.yml`) will handle auto-deployment
-- Build output directory: `dist/`
+Tailwind dark theme is toggled on `<html>` via `initializeTheme()` in `App.tsx`; use existing semantic classes rather than hardcoding `bg-gray-900`.
 
-## Development Notes
+## When writing code here
 
-### Current State
-The project is in initial setup phase with:
-- Basic Vite + React + TypeScript scaffold
-- Standard boilerplate App component
-- No routing, styling, or business logic implemented yet
-
-### Implementation Plan
-Refer to `planing_file.md` for the complete 8-phase implementation strategy. Key phases:
-1. ✅ Project Setup (Vite + React + TypeScript)
-2. Data Models & Storage (localStorage implementation)
-3. Recommendation Engine (performance + time decay algorithm)
-4. UI Components (modal, history items)
-5. Main Views (Start, Active Session, Summary)
-6. Routing & App Shell (React Router setup)
-7. Polish & Edge Cases
-8. GitHub Pages Deployment
-
-### Styling Approach
-- Use TailwindCSS utility classes
-- Dark theme throughout (bg-gray-900, text-white)
-- Large touch targets (minimum 44px) for mobile
-- Color scheme: Flash=#22c55e (green), Done=#3b82f6 (blue), Fail=#ef4444 (red)
-
-### Data Flow
-1. User starts session → create Session with empty BoulderAttempt[] → save to localStorage
-2. User logs attempts → update individual attempts → save session
-3. User finishes session → set isFinished=true → navigate to summary
-4. Next session → calculate recommendation based on last finished session
-
-### Important Considerations
-- Always serialize/deserialize Date objects when working with localStorage
-- Handle unfinished sessions (only one can exist at a time)
-- Validate that at least one attempt is logged before allowing session finish
-- Session IDs should be unique (use UUIDs)
-- Chart should handle edge cases (all same result, 0 logged attempts)
+- Narrow `Session` with the type guards before accessing volume- or training-specific fields — TypeScript won't let you access `targetLevel` on a `TrainingSession`, and that's intentional.
+- Don't persist anything derivable (XP, level, streak, fail-rate) — recompute.
+- Treat `logic/weights.ts` as the single source of truth for plate math (`roundTo2_5`, `workingWeightFromFailed`, `generateWorkingSets`). Don't inline the 2.5 / 5 / 10 constants elsewhere.
+- Unlogged volume attempts count as fails — this is deliberate (stricter), not a bug to "fix".
+- `planing_file.md` is the original 8-phase plan; it's historical context, not a live roadmap. The current mockup redesign branch is the active direction.
